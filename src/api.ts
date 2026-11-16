@@ -9,15 +9,16 @@ export interface ParsedQuery {
   symmetric: boolean;
   anchorWord: string | null;
   hasWildcardOrGroup: boolean;
+  hasOrGroup: boolean;
   predictedModeLabel: string;
   canComparePairAnchor: boolean;
-  pairWords: [string, string] | null;
+  pairWords: string[] | null;
 }
 
 export interface NearQueryResponse {
   total: number;
   docs: number;
-  countMode: 'tf' | 'pairs' | 'anchor' | 'sequence' | string;
+  countMode: 'tf' | 'pairs' | 'anchor' | 'sequence' | 'spans' | string;
   _engine?: 'arena' | 'python' | string;
 }
 
@@ -170,6 +171,7 @@ export function parseSearchQuery(
       symmetric,
       anchorWord: null,
       hasWildcardOrGroup: false,
+      hasOrGroup: false,
       predictedModeLabel: 'Skriv inn ett eller flere søkeord',
       canComparePairAnchor: false,
       pairWords: null,
@@ -196,6 +198,7 @@ export function parseSearchQuery(
       symmetric,
       anchorWord: null,
       hasWildcardOrGroup: false,
+      hasOrGroup: false,
       predictedModeLabel: `Frase i rekkefølge (${cleanTerms.length} ord)`,
       canComparePairAnchor: false,
       pairWords: null,
@@ -212,16 +215,20 @@ export function parseSearchQuery(
   }
 
   // Sjekk wildcard (*) eller OR-gruppe (a|b)
-  const hasWildcardOrGroup = rawTokens.some(
-    (t) => t.includes('*') || (t.includes('|') && t.length > 1)
-  );
+  const hasOrGroup = rawTokens.some((t) => t.includes('|') && t.length > 1);
+  const hasWildcardOrGroup =
+    hasOrGroup || rawTokens.some((t) => t.includes('*'));
+
   const termGroups = hasWildcardOrGroup
-    ? rawTokens.map((t) =>
-        t
-          .replace(/^\^(?=.+)/, '')
-          .split('|')
-          .filter(Boolean)
-      )
+    ? rawTokens.map((t) => {
+        const isAnchored = t.startsWith('^') && t.length > 1;
+        const body = isAnchored ? t.slice(1) : t;
+        const parts = body.split('|').filter(Boolean);
+        if (isAnchored && parts.length > 0) {
+          parts[0] = `^${parts[0]}`;
+        }
+        return parts;
+      })
     : undefined;
 
   const bareWords = rawTokens.map((t) =>
@@ -230,27 +237,32 @@ export function parseSearchQuery(
 
   let predictedModeLabel = '';
   if (rawTokens.length === 1) {
-    predictedModeLabel = hasWildcardOrGroup
-      ? `Wildcard / OR-gruppe (python-vei)`
-      : `Forekomster av «${bareWords[0]}» (tf)`;
+    predictedModeLabel = `Forekomster av «${bareWords[0]}» (tf)`;
   } else if (rawTokens.length === 2) {
     if (anchorWord) {
       const otherWord = bareWords.find((w) => w !== anchorWord) ?? bareWords[0];
       predictedModeLabel = `Anker på «${anchorWord}» med «${otherWord}» innenfor ${windowSize} ord`;
     } else {
-      predictedModeLabel = `Par av «${bareWords[0]}» og «${bareWords[1]}» innenfor ${windowSize} ord (${
+      predictedModeLabel = `Par innenfor ${windowSize} ord (${
         symmetric ? 'symmetrisk' : 'ordnet A → B'
       })`;
     }
   } else {
-    predictedModeLabel = `${rawTokens.length} ord i nærhet innenfor ${windowSize} ord (python-vei)`;
+    if (anchorWord) {
+      predictedModeLabel = `Anker på «${anchorWord}» med ${
+        rawTokens.length - 1
+      } ord innenfor ${windowSize} ord`;
+    } else {
+      predictedModeLabel = `Spenn (spans): steder der alle ${rawTokens.length} ord står innenfor ${windowSize} ord`;
+    }
   }
 
   const canComparePairAnchor =
-    rawTokens.length === 2 && !hasWildcardOrGroup && !isQuotedPhrase;
-  const pairWords: [string, string] | null = canComparePairAnchor
-    ? [bareWords[0], bareWords[1]]
-    : null;
+    rawTokens.length >= 2 &&
+    rawTokens.length <= 5 &&
+    !hasWildcardOrGroup &&
+    !isQuotedPhrase;
+  const pairWords: string[] | null = canComparePairAnchor ? bareWords : null;
 
   return {
     raw: trimmed,
@@ -261,6 +273,7 @@ export function parseSearchQuery(
     symmetric,
     anchorWord,
     hasWildcardOrGroup,
+    hasOrGroup,
     predictedModeLabel,
     canComparePairAnchor,
     pairWords,
@@ -490,10 +503,12 @@ export function describeCountMode(
       return `Ordpar innenfor ${parsed.window} ord (${
         parsed.symmetric ? 'symmetrisk A ↔ B' : 'ordnet A → B'
       })`;
+    case 'spans':
+      return `Spenn (spans): ikke-overlappende steder der alle ${parsed.terms.length} ord står innenfor ${parsed.window} ord`;
     case 'anchor':
-      return `Anker på «${parsed.anchorWord ?? parsed.terms[0]}» innenfor ${
-        parsed.window
-      } ord`;
+      return parsed.terms.length >= 3
+        ? `Anker på «${parsed.anchorWord ?? parsed.terms[0]}» med alle de andre ordene innenfor ${parsed.window} ord`
+        : `Anker på «${parsed.anchorWord ?? parsed.terms[0]}» innenfor ${parsed.window} ord`;
     case 'sequence':
       return `Eksakt frase i rekkefølge (${parsed.terms.length} ord)`;
     default:

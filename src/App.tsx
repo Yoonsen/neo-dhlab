@@ -27,6 +27,7 @@ const EXAMPLE_QUERIES: string[] = [
   'demokrati, diktatur',
   'demokrati diktatur',
   'demokrati ^diktatur',
+  'krig fred Europa',
   'sjarken og, ^sjarken og',
 ];
 

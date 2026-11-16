@@ -74,36 +74,43 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const lastPayload = singleItem?.payload ?? null;
 
   const currentPairKey = parsed?.pairWords
-    ? `${parsed.pairWords[0]}_${parsed.pairWords[1]}_${parsed.window}_${
+    ? `${parsed.pairWords.join('_')}_${parsed.window}_${
         corpus.enabled ? corpus.corpusToken || corpus.filterIds.length : 'all'
       }`
     : '';
 
   const runPairVsAnchorComparison = async () => {
-    if (!parsed?.pairWords) return;
-    const [w1, w2] = parsed.pairWords;
+    if (!parsed?.pairWords || parsed.pairWords.length < 2) return;
+    const words = parsed.pairWords;
     setCompLoading(true);
     try {
-      const variants = [
-        {
-          label: `Par (${w1}, ${w2})`,
-          querySyntax: `${w1} ${w2}`,
-          terms: [w1, w2],
-          explanation: `Alle par (a, b) innenfor ${parsed.window} ord, symmetrisk: near(${w1}, ${w2}) = near(${w2}, ${w1}).`,
-        },
-        {
-          label: `Anker på «${w1}»`,
-          querySyntax: `^${w1} ${w2}`,
-          terms: [`^${w1}`, w2],
-          explanation: `Forekomster av «${w1}» med minst én «${w2}» innenfor ${parsed.window} ord.`,
-        },
-        {
-          label: `Anker på «${w2}»`,
-          querySyntax: `${w1} ^${w2}`,
-          terms: [w1, `^${w2}`],
-          explanation: `Forekomster av «${w2}» med minst én «${w1}» innenfor ${parsed.window} ord.`,
-        },
-      ];
+      const isMulti = words.length >= 3;
+      const baseVariant = isMulti
+        ? {
+            label: `Spenn (${words.join(', ')})`,
+            querySyntax: words.join(' '),
+            terms: words,
+            explanation: `Antall steder (ikke-overlappende minimale spenn ≤ ${parsed.window} ord) der alle ${words.length} ordene står sammen.`,
+          }
+        : {
+            label: `Par (${words[0]}, ${words[1]})`,
+            querySyntax: `${words[0]} ${words[1]}`,
+            terms: [words[0], words[1]],
+            explanation: `Alle par (a, b) innenfor ${parsed.window} ord, symmetrisk: near(${words[0]}, ${words[1]}) = near(${words[1]}, ${words[0]}).`,
+          };
+
+      const anchorVariants = words.map((w, idx) => {
+        const anchoredTerms = words.map((tok, i) => (i === idx ? `^${tok}` : tok));
+        const others = words.filter((_, i) => i !== idx).join(', ');
+        return {
+          label: `Anker på «${w}»`,
+          querySyntax: anchoredTerms.join(' '),
+          terms: anchoredTerms,
+          explanation: `Forekomster av «${w}» med ${others} innenfor ${parsed.window} ord (kan gi flere treff enn spenn fordi flere ankre kan dele samme sted).`,
+        };
+      });
+
+      const variants = [baseVariant, ...anchorVariants];
 
       const rows: PairComparisonRow[] = [];
       for (const v of variants) {
@@ -223,7 +230,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 disabled={compLoading}
               >
                 {compLoading
-                  ? 'Sammenligner Par vs. Anker…'
+                  ? 'Sammenligner tellemåter…'
+                  : parsed.pairWords.length >= 3
+                  ? `Sammenlign Spenn (spans) vs. ^anker`
                   : `Sammenlign Par vs. ^${parsed.pairWords[0]} vs. ^${parsed.pairWords[1]}`}
               </button>
             )}
@@ -340,10 +349,23 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           >
             <div className="section-header-row">
               <div>
-                <h3>Par vs. Anker-sammenligning (vindu = {parsed.window} ord)</h3>
+                <h3>
+                  {parsed.pairWords && parsed.pairWords.length >= 3
+                    ? `Spenn (spans) vs. Anker-sammenligning (vindu = ${parsed.window} ord)`
+                    : `Par vs. Anker-sammenligning (vindu = ${parsed.window} ord)`}
+                </h3>
                 <p className="section-help">
-                  Viser forskjellen mellom symmetrisk partelling (<code>pairs</code>) og ankertelling (
-                  <code>^ord</code>). Antall bøker (<code>docs</code>) er alltid identisk.
+                  {parsed.pairWords && parsed.pairWords.length >= 3 ? (
+                    <>
+                      Viser forskjellen mellom ikke-overlappende minimale spenn (<code>spans</code>) og ankertelling (
+                      <code>^ord</code>).
+                    </>
+                  ) : (
+                    <>
+                      Viser forskjellen mellom symmetrisk partelling (<code>pairs</code>) og ankertelling (
+                      <code>^ord</code>).
+                    </>
+                  )}
                 </p>
               </div>
             </div>
