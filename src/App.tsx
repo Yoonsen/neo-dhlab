@@ -9,15 +9,14 @@ import {
   fetchNearCount,
   fetchYearTrend,
   HealthResponse,
-  NearQueryResponse,
-  parseSearchQuery,
+  ParsedQuery,
+  parseMultiSearchQuery,
   SearchLogEntry,
-  YearCountRow,
 } from './api';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
-import { OverviewTab } from './components/OverviewTab';
-import { TrendChart } from './components/TrendChart';
+import { CountSeriesItem, OverviewTab } from './components/OverviewTab';
+import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendChart';
 
 type TabId = 'overview' | 'concordance' | 'trends';
 
@@ -25,10 +24,10 @@ const EXAMPLE_QUERIES: string[] = [
   'og',
   'og i',
   '"i forhold til"',
+  'demokrati, diktatur',
   'demokrati diktatur',
   'demokrati ^diktatur',
-  'sjarken og',
-  '^sjarken og',
+  'sjarken og, ^sjarken og',
 ];
 
 export const App: React.FC = () => {
@@ -51,32 +50,30 @@ export const App: React.FC = () => {
   });
   const [corpusDialogOpen, setCorpusDialogOpen] = useState<boolean>(false);
 
-  // Step 2: Search expression state
-  const [queryText, setQueryText] = useState<string>('demokrati diktatur');
+  // Step 2: Search expression state (supports comma-separated expressions)
+  const [queryText, setQueryText] = useState<string>('demokrati, diktatur');
   const [windowSize, setWindowSize] = useState<number>(5);
   const [symmetric, setSymmetric] = useState<boolean>(true);
 
   // Step 3: Active analysis tab [Telling | Konkordans | Trender]
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
-  // Counting state
-  const [countResult, setCountResult] = useState<NearQueryResponse | null>(null);
-  const [countMs, setCountMs] = useState<number | null>(null);
-  const [lastCountPayload, setLastCountPayload] = useState<Record<string, unknown> | null>(null);
+  // Counting state (supports 1 or more sequential expressions)
+  const [countItems, setCountItems] = useState<CountSeriesItem[]>([]);
+  const [pendingCountQueries, setPendingCountQueries] = useState<string[]>([]);
   const [countLoading, setCountLoading] = useState<boolean>(false);
   const [countError, setCountError] = useState<string | null>(null);
 
-  // Trend state (defaults to 1800–2025 so 1800s corpora are included)
-  const [trendRows, setTrendRows] = useState<YearCountRow[]>([]);
-  const [trendCountMode, setTrendCountMode] = useState<string | null>(null);
-  const [trendMs, setTrendMs] = useState<number | null>(null);
-  const [trendServerMs, setTrendServerMs] = useState<number | undefined>(undefined);
+  // Trend state (supports 1 or more sequential curves)
+  const [trendSeries, setTrendSeries] = useState<TrendSeriesItem[]>([]);
+  const [pendingTrendQueries, setPendingTrendQueries] = useState<string[]>([]);
   const [trendLoading, setTrendLoading] = useState<boolean>(false);
   const [trendError, setTrendError] = useState<string | null>(null);
-  const [startYear, setStartYear] = useState<number>(1800);
-  const [endYear, setEndYear] = useState<number>(2025);
+  const [startYear] = useState<number>(1800);
+  const [endYear] = useState<number>(2025);
 
   // Concordance state
+  const [selectedConcQuery, setSelectedConcQuery] = useState<ParsedQuery | null>(null);
   const [concData, setConcData] = useState<ConcordanceResponse | null>(null);
   const [concMs, setConcMs] = useState<number | null>(null);
   const [concLoading, setConcLoading] = useState<boolean>(false);
@@ -94,7 +91,7 @@ export const App: React.FC = () => {
   // Compact search log
   const [searchLog, setSearchLog] = useState<SearchLogEntry[]>([]);
 
-  // AbortController so only 1 query runs at a time
+  // AbortController so only 1 sequential queue runs at a time
   const abortRef = useRef<AbortController | null>(null);
 
   const startNewRequest = () => {
@@ -106,10 +103,23 @@ export const App: React.FC = () => {
     return ctrl.signal;
   };
 
-  const parsed = useMemo(
-    () => parseSearchQuery(queryText, windowSize, symmetric),
+  const parsedList = useMemo(
+    () =>
+      parseMultiSearchQuery(queryText, windowSize, symmetric).filter(
+        (p) => p.terms.length > 0
+      ),
     [queryText, windowSize, symmetric]
   );
+
+  const activeConcParsed = useMemo(() => {
+    if (
+      selectedConcQuery &&
+      parsedList.some((p) => p.raw === selectedConcQuery.raw)
+    ) {
+      return selectedConcQuery;
+    }
+    return parsedList[0] ?? parseMultiSearchQuery('', windowSize, symmetric)[0];
+  }, [parsedList, selectedConcQuery, symmetric, windowSize]);
 
   const appendLog = useCallback(
     (entry: {
@@ -153,83 +163,124 @@ export const App: React.FC = () => {
       .catch(() => setHealth(null));
   }, [baseUrl]);
 
-  // 1. Counting query
-  const executeCountSearch = useCallback(
-    async (customParsed = parsed, customCorpus = corpus) => {
-      if (customParsed.terms.length === 0) return;
+  // 1. Sequential counting queue
+  const executeCountQueue = useCallback(
+    async (list = parsedList, customCorpus = corpus) => {
+      if (list.length === 0) return;
       const signal = startNewRequest();
       setCountLoading(true);
       setCountError(null);
+      setCountItems([]);
+      setPendingCountQueries(list.map((p) => p.raw));
+
       try {
-        const payload = buildNearQueryPayload(customParsed, customCorpus);
-        setLastCountPayload(payload);
-        const { data, clientMs } = await fetchNearCount(baseUrl, payload, signal);
-        setCountResult(data);
-        setCountMs(clientMs);
-        appendLog({
-          endpoint: '/near_query',
-          queryText: customParsed.raw,
-          modeLabel: data.countMode || customParsed.predictedModeLabel,
-          total: data.total,
-          docs: data.docs,
-          clientMs,
-          engine: data._engine,
-          payload,
-        });
+        for (let i = 0; i < list.length; i++) {
+          if (signal.aborted) return;
+          const itemParsed = list[i];
+          const payload = buildNearQueryPayload(itemParsed, customCorpus);
+          const { data, clientMs } = await fetchNearCount(baseUrl, payload, signal);
+          if (signal.aborted) return;
+
+          setCountItems((prev) => [
+            ...prev,
+            { parsed: itemParsed, result: data, clientMs, payload },
+          ]);
+          setPendingCountQueries(list.slice(i + 1).map((p) => p.raw));
+
+          appendLog({
+            endpoint: '/near_query',
+            queryText: itemParsed.raw,
+            modeLabel: data.countMode || itemParsed.predictedModeLabel,
+            total: data.total,
+            docs: data.docs,
+            clientMs,
+            engine: data._engine,
+            payload,
+          });
+        }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         setCountError(err instanceof Error ? err.message : String(err));
       } finally {
-        setCountLoading(false);
+        if (!signal.aborted) {
+          setPendingCountQueries([]);
+          setCountLoading(false);
+        }
       }
     },
-    [appendLog, baseUrl, corpus, parsed]
+    [appendLog, baseUrl, corpus, parsedList]
   );
 
-  // 2. Trend query
-  const executeTrendSearch = useCallback(
+  // 2. Sequential trend queue (curves appear one by one as calculated)
+  const executeTrendQueue = useCallback(
     async (
-      customParsed = parsed,
+      list = parsedList,
       sYear = startYear,
       eYear = endYear,
       customCorpus = corpus
     ) => {
-      if (customParsed.terms.length === 0) return;
+      if (list.length === 0) return;
       const signal = startNewRequest();
       setTrendLoading(true);
       setTrendError(null);
+      setTrendSeries([]);
+      setPendingTrendQueries(list.map((p) => p.raw));
+
       try {
-        const payload = buildNearQueryPayload(customParsed, customCorpus, {
-          startYear: sYear,
-          endYear: eYear,
-        });
-        const { data, clientMs } = await fetchYearTrend(baseUrl, payload, signal);
-        setTrendRows(data.rows);
-        setTrendCountMode(data.countMode ?? null);
-        setTrendMs(clientMs);
-        setTrendServerMs(data.responseMs);
-        appendLog({
-          endpoint: 'year-count',
-          queryText: `${customParsed.raw}${customCorpus.enabled ? ` [${customCorpus.label}]` : ''}`,
-          modeLabel: `Trend`,
-          clientMs,
-          engine: data._engine,
-          payload: { ...payload, mode: 'year-count' },
-        });
+        for (let i = 0; i < list.length; i++) {
+          if (signal.aborted) return;
+          const itemParsed = list[i];
+          const payload = buildNearQueryPayload(itemParsed, customCorpus, {
+            startYear: sYear,
+            endYear: eYear,
+          });
+          const { data, clientMs } = await fetchYearTrend(baseUrl, payload, signal);
+          if (signal.aborted) return;
+
+          const color = SERIES_COLORS[i % SERIES_COLORS.length];
+          setTrendSeries((prev) => [
+            ...prev,
+            {
+              query: itemParsed.raw,
+              color,
+              rows: data.rows,
+              countMode: data.countMode,
+              clientMs,
+              serverMs: data.responseMs,
+            },
+          ]);
+          setPendingTrendQueries(list.slice(i + 1).map((p) => p.raw));
+
+          appendLog({
+            endpoint: 'year-count',
+            queryText: itemParsed.raw,
+            modeLabel: 'Trend',
+            clientMs,
+            engine: data._engine,
+            payload: { ...payload, mode: 'year-count' },
+          });
+        }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         setTrendError(err instanceof Error ? err.message : String(err));
       } finally {
-        setTrendLoading(false);
+        if (!signal.aborted) {
+          setPendingTrendQueries([]);
+          setTrendLoading(false);
+        }
       }
     },
-    [appendLog, baseUrl, corpus, endYear, parsed, startYear]
+    [appendLog, baseUrl, corpus, endYear, parsedList, startYear]
   );
 
-  // 3. Concordance query
+  // 3. Concordance query (for one chosen expression)
   const executeConcordanceSearch = useCallback(
-    async (customParsed = parsed, opts = concOptions, customCorpus = corpus) => {
-      if (customParsed.terms.length === 0) return;
+    async (
+      customParsed = activeConcParsed,
+      opts = concOptions,
+      customCorpus = corpus
+    ) => {
+      if (!customParsed || customParsed.terms.length === 0) return;
       const signal = startNewRequest();
       setConcLoading(true);
       setConcError(null);
@@ -259,61 +310,75 @@ export const App: React.FC = () => {
         setConcLoading(false);
       }
     },
-    [appendLog, baseUrl, concOptions, corpus, parsed]
+    [activeConcParsed, appendLog, baseUrl, concOptions, corpus]
   );
 
-  // Run ONLY the active tab's query
+  // Run ONLY the active tab's query queue
   const runForActiveTab = (
-    targetParsed = parsed,
+    targetList = parsedList,
     tab = activeTab,
     targetCorpus = corpus
   ) => {
     if (tab === 'overview') {
-      void executeCountSearch(targetParsed, targetCorpus);
+      void executeCountQueue(targetList, targetCorpus);
     } else if (tab === 'trends') {
-      void executeTrendSearch(targetParsed, startYear, endYear, targetCorpus);
+      void executeTrendQueue(targetList, startYear, endYear, targetCorpus);
     } else if (tab === 'concordance') {
-      void executeConcordanceSearch(targetParsed, concOptions, targetCorpus);
+      const targetConc = targetList[0];
+      if (targetConc) {
+        setSelectedConcQuery(targetConc);
+        void executeConcordanceSearch(targetConc, concOptions, targetCorpus);
+      }
     }
   };
 
   useEffect(() => {
-    void executeCountSearch();
+    void executeCountQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Invalidate other tabs' cached results so switching tabs fetches fresh results
-    if (activeTab !== 'trends') setTrendRows([]);
+    if (activeTab !== 'trends') setTrendSeries([]);
     if (activeTab !== 'concordance') setConcData(null);
-    runForActiveTab(parsed, activeTab, corpus);
+    if (activeTab !== 'overview') setCountItems([]);
+    runForActiveTab(parsedList, activeTab, corpus);
   };
 
   const handleRunExample = (exampleQuery: string) => {
     setQueryText(exampleQuery);
-    const nextParsed = parseSearchQuery(exampleQuery, windowSize, symmetric);
-    if (activeTab !== 'trends') setTrendRows([]);
+    const nextList = parseMultiSearchQuery(
+      exampleQuery,
+      windowSize,
+      symmetric
+    ).filter((p) => p.terms.length > 0);
+    if (activeTab !== 'trends') setTrendSeries([]);
     if (activeTab !== 'concordance') setConcData(null);
-    runForActiveTab(nextParsed, activeTab, corpus);
+    if (activeTab !== 'overview') setCountItems([]);
+    runForActiveTab(nextList, activeTab, corpus);
   };
 
   const handleCorpusUpdate = (nextCorpus: ActiveCorpus) => {
     setCorpus(nextCorpus);
-    // Clear cached results from previous corpus so all views update to the new corpus
-    setTrendRows([]);
+    setTrendSeries([]);
     setConcData(null);
-    runForActiveTab(parsed, activeTab, nextCorpus);
+    setCountItems([]);
+    runForActiveTab(parsedList, activeTab, nextCorpus);
   };
 
   const handleTabSelect = (nextTab: TabId) => {
     setActiveTab(nextTab);
-    if (nextTab === 'trends' && trendRows.length === 0) {
-      void executeTrendSearch(parsed, startYear, endYear, corpus);
-    } else if (nextTab === 'concordance' && !concData && !parsed.hasWildcardOrGroup) {
-      void executeConcordanceSearch(parsed, concOptions, corpus);
-    } else if (nextTab === 'overview' && !countResult) {
-      void executeCountSearch(parsed, corpus);
+    if (nextTab === 'trends' && trendSeries.length === 0) {
+      void executeTrendQueue(parsedList, startYear, endYear, corpus);
+    } else if (
+      nextTab === 'concordance' &&
+      !concData &&
+      activeConcParsed &&
+      !activeConcParsed.hasWildcardOrGroup
+    ) {
+      void executeConcordanceSearch(activeConcParsed, concOptions, corpus);
+    } else if (nextTab === 'overview' && countItems.length === 0) {
+      void executeCountQueue(parsedList, corpus);
     }
   };
 
@@ -345,6 +410,15 @@ export const App: React.FC = () => {
   };
 
   const isBusy = countLoading || trendLoading || concLoading;
+
+  const badgeLabel =
+    parsedList.length > 1
+      ? `${parsedList.length} søk i sekvens`
+      : parsedList[0]?.predictedModeLabel ?? 'Skriv søkeord';
+
+  const anyMultiWord = parsedList.some(
+    (p) => p.matchMode !== 'sequence' && p.terms.length >= 2
+  );
 
   return (
     <div className="app-shell">
@@ -429,7 +503,7 @@ export const App: React.FC = () => {
             <div className="step-header-inline">
               <span className="step-badge">2. Søkeuttrykk</span>
               <label htmlFor={searchInputId} className="command-label-inline">
-                Enkeltord, ordpar, <code>^anker</code> eller <code>"frase"</code>
+                Enkeltord, ordpar, <code>^anker</code> eller <code>"frase"</code> – bruk komma (<code>,</code>) for å sammenligne flere
               </label>
             </div>
             <div className="omnibox-container">
@@ -439,18 +513,18 @@ export const App: React.FC = () => {
                 type="search"
                 className="omnibox-input"
                 value={queryText}
-                placeholder='Søk: demokrati, demokrati ^diktatur eller "i forhold til"'
+                placeholder='Søk: demokrati, diktatur eller demokrati ^diktatur, "i forhold til"'
                 autoCorrect="off"
                 autoCapitalize="none"
                 spellCheck={false}
                 enterKeyHint="search"
                 onChange={(e) => setQueryText(e.target.value)}
               />
-              <span className="syntax-live-badge">{parsed.predictedModeLabel}</span>
+              <span className="syntax-live-badge">{badgeLabel}</span>
               <button
                 type="submit"
                 className="btn-submit-search"
-                disabled={isBusy || parsed.terms.length === 0}
+                disabled={isBusy || parsedList.length === 0}
               >
                 {isBusy ? 'Kjører…' : 'Søk'}
               </button>
@@ -485,7 +559,7 @@ export const App: React.FC = () => {
                   min={1}
                   max={50}
                   value={windowSize}
-                  disabled={parsed.matchMode === 'sequence' || parsed.terms.length < 2}
+                  disabled={!anyMultiWord}
                   onChange={(e) => setWindowSize(Number(e.target.value))}
                 />
               </div>
@@ -494,7 +568,7 @@ export const App: React.FC = () => {
                   type="checkbox"
                   id={symmetricCheckId}
                   checked={symmetric}
-                  disabled={parsed.matchMode === 'sequence' || parsed.terms.length < 2}
+                  disabled={!anyMultiWord}
                   onChange={(e) => setSymmetric(e.target.checked)}
                 />
                 <label htmlFor={symmetricCheckId}>Symmetrisk</label>
@@ -545,17 +619,19 @@ export const App: React.FC = () => {
             <div role="tabpanel" aria-labelledby="tab-overview">
               <OverviewTab
                 baseUrl={baseUrl}
-                parsed={parsed}
+                items={countItems}
+                pendingQueries={pendingCountQueries}
                 corpus={corpus}
-                result={countResult}
-                clientMs={countMs}
-                lastPayload={lastCountPayload}
                 loading={countLoading}
                 error={countError}
                 concData={concData}
                 concMs={concMs}
                 concLoading={concLoading}
-                onFetchConcordance={() => handleTabSelect('concordance')}
+                onFetchConcordanceFor={(targetParsed) => {
+                  setSelectedConcQuery(targetParsed);
+                  setActiveTab('concordance');
+                  void executeConcordanceSearch(targetParsed, concOptions, corpus);
+                }}
                 onSelectQuery={handleRunExample}
                 onSwitchTab={handleTabSelect}
                 onLog={appendLog}
@@ -566,8 +642,13 @@ export const App: React.FC = () => {
           {activeTab === 'concordance' && (
             <div role="tabpanel" aria-labelledby="tab-concordance">
               <ConcordanceView
-                queryText={parsed.raw}
-                parsed={parsed}
+                queryText={activeConcParsed.raw}
+                parsed={activeConcParsed}
+                parsedList={parsedList}
+                onSelectParsed={(p) => {
+                  setSelectedConcQuery(p);
+                  void executeConcordanceSearch(p, concOptions, corpus);
+                }}
                 data={concData}
                 clientMs={concMs}
                 loading={concLoading}
@@ -576,7 +657,9 @@ export const App: React.FC = () => {
                 before={concOptions.before}
                 after={concOptions.after}
                 onOptionsChange={setConcOptions}
-                onFetch={() => void executeConcordanceSearch(parsed, concOptions, corpus)}
+                onFetch={() =>
+                  void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
+                }
               />
             </div>
           )}
@@ -591,11 +674,8 @@ export const App: React.FC = () => {
                 </div>
               )}
               <TrendChart
-                rows={trendRows}
-                queryText={parsed.raw}
-                countMode={trendCountMode}
-                clientMs={trendMs}
-                serverMs={trendServerMs}
+                seriesList={trendSeries}
+                pendingQueries={pendingTrendQueries}
                 loading={trendLoading}
               />
             </div>

@@ -9,19 +9,24 @@ import {
   ParsedQuery,
 } from '../api';
 
+export interface CountSeriesItem {
+  parsed: ParsedQuery;
+  result: NearQueryResponse;
+  clientMs: number;
+  payload: Record<string, unknown>;
+}
+
 interface OverviewTabProps {
   baseUrl: string;
-  parsed: ParsedQuery;
+  items: CountSeriesItem[];
+  pendingQueries: string[];
   corpus: ActiveCorpus;
-  result: NearQueryResponse | null;
-  clientMs: number | null;
-  lastPayload: Record<string, unknown> | null;
   loading: boolean;
   error: string | null;
   concData: ConcordanceResponse | null;
   concMs: number | null;
   concLoading: boolean;
-  onFetchConcordance: () => void;
+  onFetchConcordanceFor: (parsed: ParsedQuery) => void;
   onSelectQuery: (q: string) => void;
   onSwitchTab: (tab: 'overview' | 'trends' | 'concordance') => void;
   onLog: (entry: {
@@ -48,17 +53,12 @@ interface PairComparisonRow {
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   baseUrl,
-  parsed,
+  items,
+  pendingQueries,
   corpus,
-  result,
-  clientMs,
-  lastPayload,
   loading,
   error,
-  concData,
-  concMs,
-  concLoading,
-  onFetchConcordance,
+  onFetchConcordanceFor,
   onSelectQuery,
   onSwitchTab,
   onLog,
@@ -67,12 +67,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const [compLoading, setCompLoading] = useState<boolean>(false);
   const [compKey, setCompKey] = useState<string>('');
 
-  const currentPairKey = parsed.pairWords
-    ? `${parsed.pairWords[0]}_${parsed.pairWords[1]}_${parsed.window}_${corpus.enabled ? corpus.corpusToken || corpus.filterIds.length : 'all'}`
+  const singleItem = items.length === 1 && pendingQueries.length === 0 ? items[0] : null;
+  const parsed = singleItem?.parsed;
+  const result = singleItem?.result;
+  const clientMs = singleItem?.clientMs ?? null;
+  const lastPayload = singleItem?.payload ?? null;
+
+  const currentPairKey = parsed?.pairWords
+    ? `${parsed.pairWords[0]}_${parsed.pairWords[1]}_${parsed.window}_${
+        corpus.enabled ? corpus.corpusToken || corpus.filterIds.length : 'all'
+      }`
     : '';
 
   const runPairVsAnchorComparison = async () => {
-    if (!parsed.pairWords) return;
+    if (!parsed?.pairWords) return;
     const [w1, w2] = parsed.pairWords;
     setCompLoading(true);
     try {
@@ -87,52 +95,54 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           label: `Anker på «${w1}»`,
           querySyntax: `^${w1} ${w2}`,
           terms: [`^${w1}`, w2],
-          explanation: `Forekomster av «${w1}» som har minst én «${w2}» innenfor ${parsed.window} ord (alltid ≤ tf for «${w1}»).`,
+          explanation: `Forekomster av «${w1}» med minst én «${w2}» innenfor ${parsed.window} ord.`,
         },
         {
           label: `Anker på «${w2}»`,
           querySyntax: `${w1} ^${w2}`,
           terms: [w1, `^${w2}`],
-          explanation: `Forekomster av «${w2}» som har minst én «${w1}» innenfor ${parsed.window} ord (alltid ≤ tf for «${w2}»).`,
+          explanation: `Forekomster av «${w2}» med minst én «${w1}» innenfor ${parsed.window} ord.`,
         },
       ];
 
-      const results = await Promise.all(
-        variants.map(async (v) => {
-          const payload: Record<string, unknown> = {
-            terms: v.terms,
-            window: parsed.window,
-          };
-          if (!parsed.symmetric) payload.symmetric = false;
-          applyCorpusToPayload(payload, corpus);
-          const { data, clientMs: ms } = await fetchNearCount(baseUrl, payload);
-          onLog({
-            endpoint: '/near_query',
-            queryText: v.querySyntax,
-            modeLabel: `${data.countMode} (w=${parsed.window})`,
-            total: data.total,
-            docs: data.docs,
-            clientMs: ms,
-            engine: data._engine,
-            payload,
-          });
-          return {
-            label: v.label,
-            querySyntax: v.querySyntax,
-            countMode: data.countMode,
-            total: data.total,
-            docs: data.docs,
-            ms,
-            explanation: v.explanation,
-          };
-        })
-      );
-      setCompRows(results);
+      const rows: PairComparisonRow[] = [];
+      for (const v of variants) {
+        const payload: Record<string, unknown> = {
+          terms: v.terms,
+          window: parsed.window,
+        };
+        if (!parsed.symmetric) payload.symmetric = false;
+        applyCorpusToPayload(payload, corpus);
+        const { data, clientMs: ms } = await fetchNearCount(baseUrl, payload);
+        onLog({
+          endpoint: '/near_query',
+          queryText: v.querySyntax,
+          modeLabel: `${data.countMode} (w=${parsed.window})`,
+          total: data.total,
+          docs: data.docs,
+          clientMs: ms,
+          engine: data._engine,
+          payload,
+        });
+        rows.push({
+          label: v.label,
+          querySyntax: v.querySyntax,
+          countMode: data.countMode,
+          total: data.total,
+          docs: data.docs,
+          ms,
+          explanation: v.explanation,
+        });
+      }
+      setCompRows(rows);
       setCompKey(currentPairKey);
     } finally {
       setCompLoading(false);
     }
   };
+
+  const totalBooksInScope =
+    corpus.enabled && corpus.size > 0 ? corpus.size : 713913;
 
   return (
     <div className="panel-inner">
@@ -142,14 +152,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       )}
 
-      {loading && (
+      {loading && items.length === 0 && (
         <div role="status" aria-live="polite" className="loading-card">
           <span className="spinner" aria-hidden="true" />
           <span>Teller i 103 arena-shards (38,5 mrd. tokens)…</span>
         </div>
       )}
 
-      {result && !loading && (
+      {/* Single expression view */}
+      {singleItem && parsed && result && (
         <section className="result-hero-card" aria-label="Telle-resultat">
           <div className="result-metrics-grid">
             <div className="metric-block">
@@ -168,15 +179,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 {result.docs.toLocaleString('nb-NO')}
               </strong>
               <span className="metric-sub">
-                {corpus.enabled && corpus.size > 0
-                  ? `av ${corpus.size.toLocaleString('nb-NO')} bøker i aktivt korpus (${(
-                      (result.docs / corpus.size) *
-                      100
-                    ).toFixed(2)} %)`
-                  : `av 713 913 bøker i samlingen (${(
-                      (result.docs / 713913) *
-                      100
-                    ).toFixed(2)} %)`}
+                av {totalBooksInScope.toLocaleString('nb-NO')} bøker (
+                {((result.docs / totalBooksInScope) * 100).toFixed(2)} %)
               </span>
             </div>
 
@@ -197,14 +201,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <button
               type="button"
               className="btn-primary"
-              onClick={onFetchConcordance}
-              disabled={concLoading || parsed.hasWildcardOrGroup}
+              onClick={() => onFetchConcordanceFor(parsed)}
+              disabled={parsed.hasWildcardOrGroup}
             >
-              {concLoading
-                ? 'Henter 30 eksempler…'
-                : concData
-                ? 'Oppdater 30 eksempler under'
-                : 'Vis 30 eksempler (konkordans)'}
+              Vis eksempler i Konkordans →
             </button>
 
             <button
@@ -240,8 +240,98 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </section>
       )}
 
+      {/* Multi-expression sequential comparison table */}
+      {(items.length > 1 || (items.length >= 1 && pendingQueries.length > 0)) && (
+        <section
+          className="card-box"
+          aria-label="Sammenligning av flere søkeuttrykk"
+        >
+          <div className="section-header-row">
+            <div>
+              <h3>Sammenligning ({items.length + pendingQueries.length} søkeuttrykk)</h3>
+              <p className="section-help">
+                Kjøres sekvensielt etter hverandre mot arena-indeksen.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => onSwitchTab('trends')}
+            >
+              Sammenlign alle som trendkurver →
+            </button>
+          </div>
+
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Resultattabell for søkeuttrykk"
+            className="table-wrapper"
+          >
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Søkeuttrykk</th>
+                  <th scope="col">Tellemåte</th>
+                  <th scope="col">Treff (`total`)</th>
+                  <th scope="col">Bøker (`docs`)</th>
+                  <th scope="col">Andel av korpus</th>
+                  <th scope="col">Motor & tid</th>
+                  <th scope="col">Konkordans</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.parsed.raw}>
+                    <th scope="row">
+                      <code>{item.parsed.raw}</code>
+                    </th>
+                    <td>
+                      <span className="badge-mode">{item.result.countMode}</span>
+                    </td>
+                    <td>
+                      <strong>{item.result.total.toLocaleString('nb-NO')}</strong>
+                    </td>
+                    <td>{item.result.docs.toLocaleString('nb-NO')}</td>
+                    <td>
+                      {((item.result.docs / totalBooksInScope) * 100).toFixed(2)} %
+                    </td>
+                    <td>
+                      <span className="speed-pill">{item.clientMs} ms</span>{' '}
+                      <span className="muted">({item.result._engine || 'arena'})</span>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-tiny"
+                        disabled={item.parsed.hasWildcardOrGroup}
+                        onClick={() => onFetchConcordanceFor(item.parsed)}
+                      >
+                        Eksempler →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {pendingQueries.map((pq) => (
+                  <tr key={pq}>
+                    <th scope="row">
+                      <code>{pq}</code>
+                    </th>
+                    <td colSpan={6} className="muted">
+                      <span className="spinner-mini" aria-hidden="true" /> Beregner…
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* Side-by-side Pair vs Anchor comparison card */}
-      {parsed.canComparePairAnchor &&
+      {singleItem &&
+        parsed?.canComparePairAnchor &&
         compRows &&
         compKey === currentPairKey && (
           <section
@@ -291,72 +381,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </section>
         )}
-
-      {/* Inline Concordance Preview right under the counting result (as requested in DEMO_APP_SPEC.md item 4) */}
-      {concData && (
-        <section
-          className="card-box inline-conc-section"
-          aria-label="Eksempler fra samlingen"
-        >
-          <div className="section-header-row">
-            <div>
-              <h3>
-                Eksempler fra konkordansen ({concData.lines} linjer fra{' '}
-                {concData.books} bøker)
-              </h3>
-              <span className="muted">
-                Hentet fra <code>/concordance_public</code> på {concMs} ms
-              </span>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => onSwitchTab('concordance')}
-            >
-              Åpne i full Konkordans-fane →
-            </button>
-          </div>
-          <div
-            tabIndex={0}
-            role="region"
-            aria-label="Konkordanslinjer"
-            className="table-wrapper kwic-table-wrapper"
-          >
-            <table className="kwic-table">
-              <thead>
-                <tr>
-                  <th scope="col" className="col-dhlabid">
-                    dhlabid
-                  </th>
-                  <th scope="col" className="col-left">
-                    Venstre kontekst
-                  </th>
-                  <th scope="col" className="col-hit">
-                    Treff
-                  </th>
-                  <th scope="col" className="col-right">
-                    Høyre kontekst
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {concData.rows.map((row, idx) => (
-                  <tr key={`${row.dhlabid}-${idx}`}>
-                    <th scope="row" className="col-dhlabid">
-                      <code>{row.dhlabid}</code>
-                    </th>
-                    <td className="col-left">{row.left}</td>
-                    <td className="col-hit">
-                      <mark className="kwic-hit">{row.hit}</mark>
-                    </td>
-                    <td className="col-right">{row.right}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
     </div>
   );
 };

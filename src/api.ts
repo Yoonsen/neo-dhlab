@@ -100,6 +100,59 @@ export interface SearchLogEntry {
 }
 
 /**
+ * Deler søkestrengen på komma utenfor anførselstegn ("..." / «...»).
+ * Støtter \, (backslash-komma) dersom man vil søke på selve kommategnet (f.eks. ". \,").
+ */
+export function splitSearchExpressions(rawInput: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  let quoteChar = '';
+
+  for (let i = 0; i < rawInput.length; i++) {
+    const ch = rawInput[i];
+    if (ch === '\\' && i + 1 < rawInput.length && rawInput[i + 1] === ',') {
+      current += ',';
+      i++;
+      continue;
+    }
+    if (!inQuotes && (ch === '"' || ch === '«')) {
+      inQuotes = true;
+      quoteChar = ch === '«' ? '»' : '"';
+      current += ch;
+      continue;
+    }
+    if (inQuotes && ch === quoteChar) {
+      inQuotes = false;
+      current += ch;
+      continue;
+    }
+    if (!inQuotes && ch === ',') {
+      const trimmed = current.trim();
+      if (trimmed) parts.push(trimmed);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  const last = current.trim();
+  if (last) parts.push(last);
+  return parts;
+}
+
+export function parseMultiSearchQuery(
+  rawInput: string,
+  windowSize: number,
+  symmetric: boolean
+): ParsedQuery[] {
+  const exprs = splitSearchExpressions(rawInput);
+  if (exprs.length === 0) {
+    return [parseSearchQuery('', windowSize, symmetric)];
+  }
+  return exprs.map((e) => parseSearchQuery(e, windowSize, symmetric));
+}
+
+/**
  * Oversetter søkefeltet til ft_bok-payload etter reglene i DEMO_APP_SPEC.md og PUBLIC_API_8096.md.
  */
 export function parseSearchQuery(

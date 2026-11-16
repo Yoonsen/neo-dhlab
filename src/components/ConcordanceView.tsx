@@ -4,6 +4,8 @@ import { ConcordanceResponse, ParsedQuery } from '../api';
 interface ConcordanceViewProps {
   queryText: string;
   parsed: ParsedQuery;
+  parsedList: ParsedQuery[];
+  onSelectParsed: (p: ParsedQuery) => void;
   data: ConcordanceResponse | null;
   clientMs: number | null;
   loading: boolean;
@@ -18,6 +20,8 @@ interface ConcordanceViewProps {
 export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   queryText,
   parsed,
+  parsedList,
+  onSelectParsed,
   data,
   clientMs,
   loading,
@@ -38,6 +42,23 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
 
   return (
     <div className="panel-inner">
+      {parsedList.length > 1 && (
+        <div className="preset-row" style={{ marginBlockEnd: 0 }}>
+          <span className="preset-label">Vis konkordans for:</span>
+          {parsedList.map((p) => (
+            <button
+              key={p.raw}
+              type="button"
+              className={`example-chip ${
+                p.raw === parsed.raw ? 'example-chip-active' : ''
+              }`}
+              onClick={() => onSelectParsed(p)}
+            >
+              <code>{p.raw}</code>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="conc-toolbar">
         <div className="conc-info">
           <strong>Offentlig konkordans (`/concordance_public`)</strong>

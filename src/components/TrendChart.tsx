@@ -1,23 +1,35 @@
 import React, { useId, useMemo, useState } from 'react';
 import { YearCountRow } from '../api';
 
-interface TrendChartProps {
+export interface TrendSeriesItem {
+  query: string;
+  color: string;
   rows: YearCountRow[];
-  queryText: string;
   countMode?: string | null;
-  clientMs: number | null;
+  clientMs: number;
   serverMs?: number;
+}
+
+interface TrendChartProps {
+  seriesList: TrendSeriesItem[];
+  pendingQueries: string[];
   loading: boolean;
 }
 
 type MetricType = 'perMillion' | 'total' | 'docShare';
 
+export const SERIES_COLORS = [
+  '#0b57d0',
+  '#d93025',
+  '#188038',
+  '#e37400',
+  '#9334e6',
+  '#007b83',
+];
+
 export const TrendChart: React.FC<TrendChartProps> = ({
-  rows,
-  queryText,
-  countMode,
-  clientMs,
-  serverMs,
+  seriesList,
+  pendingQueries,
   loading,
 }) => {
   const tableCaptionId = useId();
@@ -28,73 +40,97 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const [smoothing, setSmoothing] = useState<number>(5);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const filteredRows = useMemo(() => {
-    // Trim ledende og avsluttende år der korpuset har 0 bøker, slik at kurven følger korpuset automatisk
-    const firstWithBooks = rows.findIndex((r) => r.books > 0);
+  // Finn felles årsakse på tvers av alle beregnede serier (trim tomme start/sluttår der books === 0)
+  const years = useMemo(() => {
+    if (seriesList.length === 0) return [];
+    const baseRows = seriesList[0].rows;
+    const firstWithBooks = baseRows.findIndex((r) => r.books > 0);
     if (firstWithBooks === -1) return [];
-    let lastWithBooks = rows.length - 1;
-    while (lastWithBooks > firstWithBooks && rows[lastWithBooks].books === 0) {
+    let lastWithBooks = baseRows.length - 1;
+    while (lastWithBooks > firstWithBooks && baseRows[lastWithBooks].books === 0) {
       lastWithBooks--;
     }
-    return rows.slice(firstWithBooks, lastWithBooks + 1);
-  }, [rows]);
+    return baseRows.slice(firstWithBooks, lastWithBooks + 1).map((r) => r.year);
+  }, [seriesList]);
 
-  const series = useMemo(() => {
-    const rawValues = filteredRows.map((r) => {
-      if (metric === 'perMillion') return r.perMillion;
-      if (metric === 'total') return r.total;
-      return r.books > 0 ? (r.docs / r.books) * 100 : 0;
-    });
+  // Beregn glattet tallserie for hver kurve langs den felles årsaksen
+  const computedSeries = useMemo(() => {
+    return seriesList.map((item) => {
+      const byYear = new Map<number, YearCountRow>();
+      item.rows.forEach((r) => byYear.set(r.year, r));
 
-    if (smoothing <= 1) return rawValues;
-    const half = Math.floor(smoothing / 2);
-    return rawValues.map((_, idx) => {
-      const lo = Math.max(0, idx - half);
-      const hi = Math.min(rawValues.length - 1, idx + half);
-      let sum = 0;
-      for (let i = lo; i <= hi; i++) sum += rawValues[i];
-      return sum / (hi - lo + 1);
-    });
-  }, [filteredRows, metric, smoothing]);
+      const alignedRows = years.map(
+        (y) =>
+          byYear.get(y) ?? {
+            year: y,
+            total: 0,
+            docs: 0,
+            books: 0,
+            tokens: 0,
+            perMillion: 0,
+          }
+      );
 
-  const summary = useMemo(() => {
-    let totalHits = 0;
-    let totalDocs = 0;
-    let peakYear = 0;
-    let peakVal = -1;
-    filteredRows.forEach((r, idx) => {
-      totalHits += r.total;
-      totalDocs += r.docs;
-      if (series[idx] > peakVal) {
-        peakVal = series[idx];
-        peakYear = r.year;
-      }
+      const rawValues = alignedRows.map((r) => {
+        if (metric === 'perMillion') return r.perMillion;
+        if (metric === 'total') return r.total;
+        return r.books > 0 ? (r.docs / r.books) * 100 : 0;
+      });
+
+      const smoothed =
+        smoothing <= 1
+          ? rawValues
+          : rawValues.map((_, idx) => {
+              const half = Math.floor(smoothing / 2);
+              const lo = Math.max(0, idx - half);
+              const hi = Math.min(rawValues.length - 1, idx + half);
+              let sum = 0;
+              for (let i = lo; i <= hi; i++) sum += rawValues[i];
+              return sum / (hi - lo + 1);
+            });
+
+      const totalHits = alignedRows.reduce((acc, r) => acc + r.total, 0);
+      const totalDocs = alignedRows.reduce((acc, r) => acc + r.docs, 0);
+
+      return {
+        ...item,
+        alignedRows,
+        values: smoothed,
+        totalHits,
+        totalDocs,
+      };
     });
-    const minYear = filteredRows[0]?.year;
-    const maxYear = filteredRows[filteredRows.length - 1]?.year;
-    return { totalHits, totalDocs, peakYear, peakVal, minYear, maxYear };
-  }, [filteredRows, series]);
+  }, [seriesList, years, metric, smoothing]);
 
   const exportCsv = () => {
-    const header = 'year,total,docs,books,tokens,perMillion\n';
-    const body = filteredRows
-      .map(
-        (r) =>
-          `${r.year},${r.total},${r.docs},${r.books},${r.tokens},${r.perMillion}`
-      )
-      .join('\n');
-    const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
+    if (computedSeries.length === 0 || years.length === 0) return;
+    const cols = ['year', 'books', 'tokens'];
+    computedSeries.forEach((s) => {
+      const safe = s.query.replace(/[,"]/g, '');
+      cols.push(`${safe}_total`, `${safe}_docs`, `${safe}_perMillion`);
+    });
+    const lines = [cols.join(',')];
+    years.forEach((y, idx) => {
+      const baseRow = computedSeries[0].alignedRows[idx];
+      const rowCells: (string | number)[] = [y, baseRow.books, baseRow.tokens];
+      computedSeries.forEach((s) => {
+        const r = s.alignedRows[idx];
+        rowCells.push(r.total, r.docs, r.perMillion);
+      });
+      lines.push(rowCells.join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `trend_${queryText.replace(/\s+/g, '_')}.csv`;
+    a.download = `trender_${computedSeries.map((s) => s.query).join('_')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   // SVG dimensions
   const width = 920;
-  const height = 320;
+  const height = 340;
   const padLeft = 64;
   const padRight = 24;
   const padTop = 20;
@@ -102,34 +138,26 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
 
-  const maxVal = Math.max(...series, 0.0001);
+  const maxVal = useMemo(() => {
+    let m = 0.0001;
+    for (const s of computedSeries) {
+      for (const v of s.values) {
+        if (v > m) m = v;
+      }
+    }
+    return m;
+  }, [computedSeries]);
+
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
 
   const getX = (idx: number) => {
-    if (filteredRows.length <= 1) return padLeft + plotW / 2;
-    return padLeft + (idx / (filteredRows.length - 1)) * plotW;
+    if (years.length <= 1) return padLeft + plotW / 2;
+    return padLeft + (idx / (years.length - 1)) * plotW;
   };
 
   const getY = (val: number) => {
     return padTop + plotH - (val / maxVal) * plotH;
   };
-
-  const linePath =
-    filteredRows.length > 0
-      ? series
-          .map((v, i) => `${i === 0 ? 'M' : 'L'}${getX(i).toFixed(1)},${getY(v).toFixed(1)}`)
-          .join(' ')
-      : '';
-
-  const areaPath =
-    filteredRows.length > 1
-      ? `${linePath} L${getX(filteredRows.length - 1).toFixed(1)},${(
-          padTop + plotH
-        ).toFixed(1)} L${getX(0).toFixed(1)},${(padTop + plotH).toFixed(1)} Z`
-      : '';
-
-  const hoveredRow = hoverIndex !== null ? filteredRows[hoverIndex] : null;
-  const hoveredVal = hoverIndex !== null ? series[hoverIndex] : null;
 
   const formatMetric = (v: number) => {
     if (metric === 'total') return Math.round(v).toLocaleString('nb-NO');
@@ -139,6 +167,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       maximumFractionDigits: 2,
     });
   };
+
+  const hoveredYear = hoverIndex !== null ? years[hoverIndex] : null;
 
   return (
     <div className="panel-inner">
@@ -197,71 +227,55 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             type="button"
             className="btn-secondary"
             onClick={exportCsv}
-            disabled={filteredRows.length === 0}
+            disabled={computedSeries.length === 0 || years.length === 0}
           >
             Last ned CSV
           </button>
         </div>
       </div>
 
-      {loading && (
-        <div role="status" aria-live="polite" className="loading-card">
-          <span className="spinner" aria-hidden="true" />
-          <span>Beregner årstrender i arena-indeksen…</span>
-        </div>
-      )}
-
-      {!loading && filteredRows.length > 0 && (
-        <>
-          <div className="kpi-strip">
-            <div className="kpi-mini">
-              <span className="kpi-mini-label">
-                Sum treff ({summary.minYear}–{summary.maxYear})
-              </span>
-              <strong className="kpi-mini-val">
-                {summary.totalHits.toLocaleString('nb-NO')}
-              </strong>
-            </div>
-            <div className="kpi-mini">
-              <span className="kpi-mini-label">Bøker med treff</span>
-              <strong className="kpi-mini-val">
-                {summary.totalDocs.toLocaleString('nb-NO')}
-              </strong>
-            </div>
-            <div className="kpi-mini">
-              <span className="kpi-mini-label">
-                Toppår ({smoothing > 1 ? `${smoothing}-års snitt` : 'enkeltår'})
-              </span>
-              <strong className="kpi-mini-val">
-                {summary.peakYear > 0
-                  ? `${summary.peakYear} (${formatMetric(summary.peakVal)})`
-                  : '–'}
-              </strong>
-            </div>
-            <div className="kpi-mini">
-              <span className="kpi-mini-label">Svartid (year-count)</span>
-              <strong className="kpi-mini-val speed-highlight">
-                {clientMs !== null ? `${clientMs} ms` : '–'}
-                {serverMs ? ` (server ${serverMs} ms)` : ''}
-              </strong>
-            </div>
+      {/* Legend cards showing finished series + any pending series in queue */}
+      <div className="series-legend-row" role="status" aria-live="polite">
+        {computedSeries.map((s) => (
+          <div key={s.query} className="series-legend-card">
+            <span
+              className="series-swatch"
+              style={{ background: s.color }}
+              aria-hidden="true"
+            />
+            <strong>
+              <code>{s.query}</code>
+            </strong>
+            <span className="muted">
+              {s.totalHits.toLocaleString('nb-NO')} treff i{' '}
+              {s.totalDocs.toLocaleString('nb-NO')} bøker
+            </span>
+            <span className="speed-pill">{s.clientMs} ms</span>
           </div>
+        ))}
 
+        {pendingQueries.map((pq) => (
+          <div key={pq} className="series-legend-card series-pending">
+            <span className="spinner-mini" aria-hidden="true" />
+            <span>
+              Beregner <code>{pq}</code>…
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {computedSeries.length > 0 && years.length > 0 && (
+        <>
           <figure className="chart-figure">
             <svg
               viewBox={`0 0 ${width} ${height}`}
               className="trend-svg"
               role="img"
-              aria-label={`Trendkurve for ${queryText}`}
+              aria-label={`Trendkurver for ${computedSeries
+                .map((s) => s.query)
+                .join(', ')}`}
               onMouseLeave={() => setHoverIndex(null)}
             >
-              <defs>
-                <linearGradient id="trendAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
-                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
-
               {yTicks.map((t, idx) => {
                 const y = getY(t);
                 return (
@@ -288,12 +302,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 );
               })}
 
-              {filteredRows.map((r, idx) => {
-                const step = Math.max(1, Math.floor(filteredRows.length / 10));
-                if (idx % step !== 0 && idx !== filteredRows.length - 1) return null;
+              {years.map((y, idx) => {
+                const step = Math.max(1, Math.floor(years.length / 10));
+                if (idx % step !== 0 && idx !== years.length - 1) return null;
                 const x = getX(idx);
                 return (
-                  <g key={r.year}>
+                  <g key={y}>
                     <line
                       x1={x}
                       x2={x}
@@ -307,51 +321,68 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                       textAnchor="middle"
                       className="chart-axis-text"
                     >
-                      {r.year}
+                      {y}
                     </text>
                   </g>
                 );
               })}
 
-              {areaPath && <path d={areaPath} fill="url(#trendAreaGrad)" />}
-              {linePath && (
-                <path
-                  d={linePath}
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth="2.4"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              )}
+              {/* Render each series line */}
+              {computedSeries.map((s) => {
+                const linePath = s.values
+                  .map(
+                    (v, i) =>
+                      `${i === 0 ? 'M' : 'L'}${getX(i).toFixed(1)},${getY(v).toFixed(1)}`
+                  )
+                  .join(' ');
+                return (
+                  <path
+                    key={s.query}
+                    d={linePath}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth="2.4"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                );
+              })}
 
-              {hoverIndex !== null && hoveredVal !== null && (
+              {/* Hover crosshair & dots for all series */}
+              {hoverIndex !== null && (
                 <g>
                   <line
                     x1={getX(hoverIndex)}
                     x2={getX(hoverIndex)}
                     y1={padTop}
                     y2={padTop + plotH}
-                    stroke="var(--accent)"
+                    stroke="var(--text-muted)"
                     strokeDasharray="3 3"
                   />
-                  <circle
-                    cx={getX(hoverIndex)}
-                    cy={getY(hoveredVal)}
-                    r={5}
-                    fill="var(--accent)"
-                    stroke="var(--surface)"
-                    strokeWidth={2}
-                  />
+                  {computedSeries.map((s) => {
+                    const val = s.values[hoverIndex] ?? 0;
+                    return (
+                      <circle
+                        key={s.query}
+                        cx={getX(hoverIndex)}
+                        cy={getY(val)}
+                        r={4.5}
+                        fill={s.color}
+                        stroke="var(--surface)"
+                        strokeWidth={2}
+                      />
+                    );
+                  })}
                 </g>
               )}
 
-              {filteredRows.map((r, idx) => {
-                const sliceW = plotW / Math.max(1, filteredRows.length);
+              {/* Invisible interactive slices */}
+              {years.map((y, idx) => {
+                const sliceW = plotW / Math.max(1, years.length);
                 const x = getX(idx) - sliceW / 2;
                 return (
                   <rect
-                    key={r.year}
+                    key={y}
                     x={Math.max(padLeft, x)}
                     y={padTop}
                     width={sliceW}
@@ -364,21 +395,27 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             </svg>
 
             <figcaption className="chart-caption">
-              {hoveredRow && hoveredVal !== null ? (
-                <div>
-                  <strong>År {hoveredRow.year}:</strong>{' '}
-                  <span>{formatMetric(hoveredVal)}</span> ·{' '}
-                  <span>{hoveredRow.total.toLocaleString('nb-NO')} treff</span> i{' '}
-                  <span>
-                    {hoveredRow.docs.toLocaleString('nb-NO')} av{' '}
-                    {hoveredRow.books.toLocaleString('nb-NO')} bøker
-                  </span>{' '}
-                  ({(hoveredRow.tokens / 1e6).toFixed(1)} mill. tokens)
+              {hoverIndex !== null && hoveredYear !== null ? (
+                <div className="hover-multi-readout">
+                  <strong>År {hoveredYear}:</strong>
+                  {computedSeries.map((s) => {
+                    const r = s.alignedRows[hoverIndex];
+                    const v = s.values[hoverIndex] ?? 0;
+                    return (
+                      <span key={s.query} className="hover-series-chip">
+                        <span
+                          className="series-swatch"
+                          style={{ background: s.color }}
+                        />
+                        <code>{s.query}</code>: <strong>{formatMetric(v)}</strong>{' '}
+                        ({r.total.toLocaleString('nb-NO')} treff i {r.docs} bøker)
+                      </span>
+                    );
+                  })}
                 </div>
               ) : (
                 <span>
-                  Hold pekeren over grafen for detaljer per år. Tellemåte:{' '}
-                  <code>{countMode || 'arena'}</code>.
+                  Hold pekeren over grafen for å sammenligne verdier per år. Skriv komma mellom søkeuttrykk for å legge til flere linjer.
                 </span>
               )}
             </figcaption>
@@ -392,39 +429,51 @@ export const TrendChart: React.FC<TrendChartProps> = ({
           >
             <table>
               <caption id={tableCaptionId} className="table-caption">
-                Årstabell for «{queryText}» ({filteredRows.length} år)
+                Årstabell ({years[0]}–{years[years.length - 1]})
               </caption>
               <thead>
                 <tr>
                   <th scope="col">År</th>
-                  <th scope="col">Per million ord</th>
-                  <th scope="col">Antall treff (total)</th>
-                  <th scope="col">Bøker med treff (docs)</th>
-                  <th scope="col">Bøker i korpus (books)</th>
-                  <th scope="col">Tokens i korpus</th>
+                  <th scope="col">Bøker i korpus</th>
+                  {computedSeries.map((s) => (
+                    <th key={s.query} scope="col">
+                      <code>{s.query}</code> (per mill. / treff)
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredRows
+                {years
                   .slice()
                   .reverse()
-                  .map((r) => (
-                    <tr key={r.year}>
-                      <th scope="row">{r.year}</th>
-                      <td>{r.perMillion.toFixed(3)}</td>
-                      <td>{r.total.toLocaleString('nb-NO')}</td>
-                      <td>{r.docs.toLocaleString('nb-NO')}</td>
-                      <td>{r.books.toLocaleString('nb-NO')}</td>
-                      <td>{r.tokens.toLocaleString('nb-NO')}</td>
-                    </tr>
-                  ))}
+                  .map((y) => {
+                    const idx = years.indexOf(y);
+                    const baseRow = computedSeries[0].alignedRows[idx];
+                    return (
+                      <tr key={y}>
+                        <th scope="row">{y}</th>
+                        <td>{baseRow.books.toLocaleString('nb-NO')}</td>
+                        {computedSeries.map((s) => {
+                          const r = s.alignedRows[idx];
+                          return (
+                            <td key={s.query}>
+                              <strong>{r.perMillion.toFixed(2)}</strong>{' '}
+                              <span className="muted">
+                                ({r.total.toLocaleString('nb-NO')})
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
         </>
       )}
 
-      {!loading && filteredRows.length === 0 && (
+      {!loading && computedSeries.length === 0 && (
         <div className="empty-box">Ingen årsdata funnet for dette søket/korpuset.</div>
       )}
     </div>
