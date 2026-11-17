@@ -1,5 +1,6 @@
 import React, { useId, useMemo, useState } from 'react';
 import { YearCountRow } from '../api';
+import { downloadExcelFile } from '../excelExport';
 
 export interface TrendSeriesItem {
   query: string;
@@ -38,9 +39,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
   const [metric, setMetric] = useState<MetricType>('perMillion');
   const [smoothing, setSmoothing] = useState<number>(5);
+  const [showNumbers, setShowNumbers] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  // Finn felles årsakse på tvers av alle beregnede serier (trim tomme start/sluttår der books === 0)
   const years = useMemo(() => {
     if (seriesList.length === 0) return [];
     const baseRows = seriesList[0].rows;
@@ -53,7 +54,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     return baseRows.slice(firstWithBooks, lastWithBooks + 1).map((r) => r.year);
   }, [seriesList]);
 
-  // Beregn glattet tallserie for hver kurve langs den felles årsaksen
   const computedSeries = useMemo(() => {
     return seriesList.map((item) => {
       const byYear = new Map<number, YearCountRow>();
@@ -102,14 +102,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     });
   }, [seriesList, years, metric, smoothing]);
 
-  const exportCsv = () => {
-    if (computedSeries.length === 0 || years.length === 0) return;
-    const cols = ['year', 'books', 'tokens'];
+  const buildExportMatrix = (): (string | number)[][] => {
+    const header: (string | number)[] = ['year', 'books', 'tokens'];
     computedSeries.forEach((s) => {
-      const safe = s.query.replace(/[,"]/g, '');
-      cols.push(`${safe}_total`, `${safe}_docs`, `${safe}_perMillion`);
+      header.push(`${s.query}_total`, `${s.query}_docs`, `${s.query}_perMillion`);
     });
-    const lines = [cols.join(',')];
+    const matrix: (string | number)[][] = [header];
     years.forEach((y, idx) => {
       const baseRow = computedSeries[0].alignedRows[idx];
       const rowCells: (string | number)[] = [y, baseRow.books, baseRow.tokens];
@@ -117,9 +115,35 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         const r = s.alignedRows[idx];
         rowCells.push(r.total, r.docs, r.perMillion);
       });
-      lines.push(rowCells.join(','));
+      matrix.push(rowCells);
     });
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    return matrix;
+  };
+
+  const exportExcel = () => {
+    if (computedSeries.length === 0 || years.length === 0) return;
+    const matrix = buildExportMatrix();
+    const safeName = computedSeries
+      .map((s) => s.query.replace(/\s+/g, '_'))
+      .join('_');
+    downloadExcelFile(`trender_${safeName}.xlsx`, matrix);
+  };
+
+  const exportCsv = () => {
+    if (computedSeries.length === 0 || years.length === 0) return;
+    const matrix = buildExportMatrix();
+    const csv = matrix
+      .map((row) =>
+        row
+          .map((cell) =>
+            typeof cell === 'string' && cell.includes(',')
+              ? `"${cell.replace(/"/g, '""')}"`
+              : String(cell)
+          )
+          .join(',')
+      )
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -174,7 +198,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     <div className="panel-inner">
       <div className="trend-toolbar">
         <fieldset className="radio-fieldset">
-          <legend>Måltall i kurven</legend>
+          <legend className="visually-hidden">Måltall i kurven</legend>
           <div className="radio-row">
             <span className="radio-item">
               <input
@@ -223,18 +247,37 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               <option value={11}>11-års snitt</option>
             </select>
           </div>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowNumbers((v) => !v)}
+            disabled={computedSeries.length === 0}
+          >
+            {showNumbers ? 'Skjul tall' : 'Vis tall'}
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={exportExcel}
+            disabled={computedSeries.length === 0 || years.length === 0}
+          >
+            Excel (.xlsx)
+          </button>
+
           <button
             type="button"
             className="btn-secondary"
             onClick={exportCsv}
             disabled={computedSeries.length === 0 || years.length === 0}
           >
-            Last ned CSV
+            CSV
           </button>
         </div>
       </div>
 
-      {/* Legend cards showing finished series + any pending series in queue */}
+      {/* Legend cards */}
       <div className="series-legend-row" role="status" aria-live="polite">
         {computedSeries.map((s) => (
           <div key={s.query} className="series-legend-card">
@@ -247,7 +290,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               <code>{s.query}</code>
             </strong>
             <span className="muted">
-              {s.totalHits.toLocaleString('nb-NO')} treff i{' '}
+              {s.totalHits.toLocaleString('nb-NO')} treff ·{' '}
               {s.totalDocs.toLocaleString('nb-NO')} bøker
             </span>
             <span className="speed-pill">{s.clientMs} ms</span>
@@ -327,7 +370,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 );
               })}
 
-              {/* Render each series line */}
               {computedSeries.map((s) => {
                 const linePath = s.values
                   .map(
@@ -348,7 +390,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 );
               })}
 
-              {/* Hover crosshair & dots for all series */}
               {hoverIndex !== null && (
                 <g>
                   <line
@@ -376,7 +417,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 </g>
               )}
 
-              {/* Invisible interactive slices */}
               {years.map((y, idx) => {
                 const sliceW = plotW / Math.max(1, years.length);
                 const x = getX(idx) - sliceW / 2;
@@ -415,61 +455,63 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 </div>
               ) : (
                 <span>
-                  Hold pekeren over grafen for å sammenligne verdier per år. Skriv komma mellom søkeuttrykk for å legge til flere linjer.
+                  Hold pekeren over grafen for verdier per år.
                 </span>
               )}
             </figcaption>
           </figure>
 
-          <div
-            tabIndex={0}
-            role="region"
-            aria-labelledby={tableCaptionId}
-            className="table-wrapper"
-          >
-            <table>
-              <caption id={tableCaptionId} className="table-caption">
-                Årstabell ({years[0]}–{years[years.length - 1]})
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">År</th>
-                  <th scope="col">Bøker i korpus</th>
-                  {computedSeries.map((s) => (
-                    <th key={s.query} scope="col">
-                      <code>{s.query}</code> (per mill. / treff)
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {years
-                  .slice()
-                  .reverse()
-                  .map((y) => {
-                    const idx = years.indexOf(y);
-                    const baseRow = computedSeries[0].alignedRows[idx];
-                    return (
-                      <tr key={y}>
-                        <th scope="row">{y}</th>
-                        <td>{baseRow.books.toLocaleString('nb-NO')}</td>
-                        {computedSeries.map((s) => {
-                          const r = s.alignedRows[idx];
-                          return (
-                            <td key={s.query}>
-                              <strong>{r.perMillion.toFixed(2)}</strong>{' '}
-                              <span className="muted">
-                                ({r.total.toLocaleString('nb-NO')})
-                              </span>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
+          {showNumbers && (
+            <div
+              tabIndex={0}
+              role="region"
+              aria-labelledby={tableCaptionId}
+              className="table-wrapper"
+            >
+              <table>
+                <caption id={tableCaptionId} className="table-caption">
+                  Årstabell ({years[0]}–{years[years.length - 1]})
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">År</th>
+                    <th scope="col">Bøker i korpus</th>
+                    {computedSeries.map((s) => (
+                      <th key={s.query} scope="col">
+                        <code>{s.query}</code> (per mill. / treff)
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {years
+                    .slice()
+                    .reverse()
+                    .map((y) => {
+                      const idx = years.indexOf(y);
+                      const baseRow = computedSeries[0].alignedRows[idx];
+                      return (
+                        <tr key={y}>
+                          <th scope="row">{y}</th>
+                          <td>{baseRow.books.toLocaleString('nb-NO')}</td>
+                          {computedSeries.map((s) => {
+                            const r = s.alignedRows[idx];
+                            return (
+                              <td key={s.query}>
+                                <strong>{r.perMillion.toFixed(2)}</strong>{' '}
+                                <span className="muted">
+                                  ({r.total.toLocaleString('nb-NO')})
+                                </span>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 

@@ -20,6 +20,9 @@ export interface NearQueryResponse {
   docs: number;
   countMode: 'tf' | 'pairs' | 'anchor' | 'sequence' | 'spans' | string;
   _engine?: 'arena' | 'python' | string;
+  corpusToken?: string;
+  corpusSize?: number;
+  sampled?: boolean;
 }
 
 export interface YearCountRow {

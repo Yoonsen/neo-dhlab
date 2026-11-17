@@ -11,7 +11,6 @@ import {
   HealthResponse,
   ParsedQuery,
   parseMultiSearchQuery,
-  SearchLogEntry,
 } from './api';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
@@ -20,16 +19,32 @@ import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendCh
 
 type TabId = 'overview' | 'concordance' | 'trends';
 
-const EXAMPLE_QUERIES: string[] = [
-  'og',
-  'og i',
-  '"i forhold til"',
+const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
+
+const DEFAULT_RECENT_QUERIES: string[] = [
   'demokrati, diktatur',
   'demokrati diktatur',
   'demokrati ^diktatur',
+  '"i forhold til"',
   'krig fred Europa',
   'sjarken og, ^sjarken og',
+  'og i',
+  'og',
 ];
+
+function loadRecentQueries(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_STORAGE_KEY);
+    if (!raw) return DEFAULT_RECENT_QUERIES;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.filter((x): x is string => typeof x === 'string');
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return DEFAULT_RECENT_QUERIES;
+}
 
 export const App: React.FC = () => {
   const searchInputId = useId();
@@ -40,7 +55,7 @@ export const App: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthMs, setHealthMs] = useState<number | null>(null);
 
-  // Step 1: Corpus context state
+  // Corpus context state
   const [corpus, setCorpus] = useState<ActiveCorpus>({
     enabled: false,
     label: 'Hele samlingen',
@@ -51,21 +66,23 @@ export const App: React.FC = () => {
   });
   const [corpusDialogOpen, setCorpusDialogOpen] = useState<boolean>(false);
 
-  // Step 2: Search expression state (supports comma-separated expressions)
+  // Active option tab ABOVE the search input
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  // Search expression state + recent queries in localStorage
   const [queryText, setQueryText] = useState<string>('demokrati, diktatur');
   const [windowSize, setWindowSize] = useState<number>(5);
   const [symmetric, setSymmetric] = useState<boolean>(true);
+  const [recentQueries, setRecentQueries] = useState<string[]>(loadRecentQueries);
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false);
 
-  // Step 3: Active analysis tab [Telling | Konkordans | Trender]
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-
-  // Counting state (supports 1 or more sequential expressions)
+  // Counting state
   const [countItems, setCountItems] = useState<CountSeriesItem[]>([]);
   const [pendingCountQueries, setPendingCountQueries] = useState<string[]>([]);
   const [countLoading, setCountLoading] = useState<boolean>(false);
   const [countError, setCountError] = useState<string | null>(null);
 
-  // Trend state (supports 1 or more sequential curves)
+  // Trend state
   const [trendSeries, setTrendSeries] = useState<TrendSeriesItem[]>([]);
   const [pendingTrendQueries, setPendingTrendQueries] = useState<string[]>([]);
   const [trendLoading, setTrendLoading] = useState<boolean>(false);
@@ -89,10 +106,6 @@ export const App: React.FC = () => {
     after: 10,
   });
 
-  // Compact search log
-  const [searchLog, setSearchLog] = useState<SearchLogEntry[]>([]);
-
-  // AbortController so only 1 sequential queue runs at a time
   const abortRef = useRef<AbortController | null>(null);
 
   const startNewRequest = () => {
@@ -103,6 +116,20 @@ export const App: React.FC = () => {
     abortRef.current = ctrl;
     return ctrl.signal;
   };
+
+  const rememberQuery = useCallback((q: string) => {
+    const clean = q.trim();
+    if (!clean) return;
+    setRecentQueries((prev) => {
+      const next = [clean, ...prev.filter((item) => item !== clean)].slice(0, 15);
+      try {
+        localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
 
   const parsedList = useMemo(
     () =>
@@ -121,39 +148,6 @@ export const App: React.FC = () => {
     }
     return parsedList[0] ?? parseMultiSearchQuery('', windowSize, symmetric)[0];
   }, [parsedList, selectedConcQuery, symmetric, windowSize]);
-
-  const appendLog = useCallback(
-    (entry: {
-      endpoint: string;
-      queryText: string;
-      modeLabel: string;
-      total?: number;
-      docs?: number;
-      clientMs: number;
-      engine?: string;
-      payload: Record<string, unknown>;
-    }) => {
-      const timeStr = new Date().toTimeString().slice(0, 8);
-      setSearchLog((prev) => [
-        {
-          id: `${Date.now()}-${Math.random()}`,
-          timestamp: timeStr,
-          endpoint: entry.endpoint,
-          queryText: entry.queryText,
-          modeLabel: entry.modeLabel,
-          total: entry.total,
-          docs: entry.docs,
-          clientMs: entry.clientMs,
-          engine: entry.engine,
-          corpusActive: corpus.enabled && corpus.size > 0,
-          corpusSize: corpus.enabled ? corpus.size : undefined,
-          payload: entry.payload,
-        },
-        ...prev.slice(0, 14),
-      ]);
-    },
-    [corpus.enabled, corpus.size]
-  );
 
   useEffect(() => {
     checkHealth(baseUrl)
@@ -187,17 +181,6 @@ export const App: React.FC = () => {
             { parsed: itemParsed, result: data, clientMs, payload },
           ]);
           setPendingCountQueries(list.slice(i + 1).map((p) => p.raw));
-
-          appendLog({
-            endpoint: '/near_query',
-            queryText: itemParsed.raw,
-            modeLabel: data.countMode || itemParsed.predictedModeLabel,
-            total: data.total,
-            docs: data.docs,
-            clientMs,
-            engine: data._engine,
-            payload,
-          });
         }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
@@ -209,10 +192,10 @@ export const App: React.FC = () => {
         }
       }
     },
-    [appendLog, baseUrl, corpus, parsedList]
+    [baseUrl, corpus, parsedList]
   );
 
-  // 2. Sequential trend queue (curves appear one by one as calculated)
+  // 2. Sequential trend queue
   const executeTrendQueue = useCallback(
     async (
       list = parsedList,
@@ -251,15 +234,6 @@ export const App: React.FC = () => {
             },
           ]);
           setPendingTrendQueries(list.slice(i + 1).map((p) => p.raw));
-
-          appendLog({
-            endpoint: 'year-count',
-            queryText: itemParsed.raw,
-            modeLabel: 'Trend',
-            clientMs,
-            engine: data._engine,
-            payload: { ...payload, mode: 'year-count' },
-          });
         }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
@@ -271,10 +245,10 @@ export const App: React.FC = () => {
         }
       }
     },
-    [appendLog, baseUrl, corpus, endYear, parsedList, startYear]
+    [baseUrl, corpus, endYear, parsedList, startYear]
   );
 
-  // 3. Concordance query (for one chosen expression)
+  // 3. Concordance query
   const executeConcordanceSearch = useCallback(
     async (
       customParsed = activeConcParsed,
@@ -286,7 +260,7 @@ export const App: React.FC = () => {
       setConcLoading(true);
       setConcError(null);
       try {
-        const { data, clientMs, payload } = await fetchConcordancePublic(
+        const { data, clientMs } = await fetchConcordancePublic(
           baseUrl,
           customParsed,
           customCorpus,
@@ -295,15 +269,6 @@ export const App: React.FC = () => {
         );
         setConcData(data);
         setConcMs(clientMs);
-        appendLog({
-          endpoint: '/concordance_public',
-          queryText: customParsed.raw,
-          modeLabel: `${data.lines} linjer`,
-          total: data.lines,
-          docs: data.books,
-          clientMs,
-          payload,
-        });
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         setConcError(err instanceof Error ? err.message : String(err));
@@ -311,10 +276,9 @@ export const App: React.FC = () => {
         setConcLoading(false);
       }
     },
-    [activeConcParsed, appendLog, baseUrl, concOptions, corpus]
+    [activeConcParsed, baseUrl, concOptions, corpus]
   );
 
-  // Run ONLY the active tab's query queue
   const runForActiveTab = (
     targetList = parsedList,
     tab = activeTab,
@@ -340,19 +304,21 @@ export const App: React.FC = () => {
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setHistoryOpen(false);
+    rememberQuery(queryText);
     if (activeTab !== 'trends') setTrendSeries([]);
     if (activeTab !== 'concordance') setConcData(null);
     if (activeTab !== 'overview') setCountItems([]);
     runForActiveTab(parsedList, activeTab, corpus);
   };
 
-  const handleRunExample = (exampleQuery: string) => {
-    setQueryText(exampleQuery);
-    const nextList = parseMultiSearchQuery(
-      exampleQuery,
-      windowSize,
-      symmetric
-    ).filter((p) => p.terms.length > 0);
+  const handleSelectQuery = (q: string) => {
+    setQueryText(q);
+    setHistoryOpen(false);
+    rememberQuery(q);
+    const nextList = parseMultiSearchQuery(q, windowSize, symmetric).filter(
+      (p) => p.terms.length > 0
+    );
     if (activeTab !== 'trends') setTrendSeries([]);
     if (activeTab !== 'concordance') setConcData(null);
     if (activeTab !== 'overview') setCountItems([]);
@@ -412,11 +378,6 @@ export const App: React.FC = () => {
 
   const isBusy = countLoading || trendLoading || concLoading;
 
-  const badgeLabel =
-    parsedList.length > 1
-      ? `${parsedList.length} søk i sekvens`
-      : parsedList[0]?.predictedModeLabel ?? 'Skriv søkeord';
-
   const anyMultiWord = parsedList.some(
     (p) => p.matchMode !== 'sequence' && p.terms.length >= 2
   );
@@ -426,21 +387,21 @@ export const App: React.FC = () => {
       <header className="compact-header">
         <div className="brand-group">
           <span className="brand-badge">ft_bok</span>
-          <h1>Korpusmotor (Arena)</h1>
+          <h1>Korpusmotor</h1>
         </div>
         <span
           className={`status-pill ${health?.status === 'ok' ? 'status-ok' : 'status-wait'}`}
         >
           <span className="status-dot" aria-hidden="true" />
-          {health?.status === 'ok' ? `API klar (${healthMs} ms)` : 'API'}
+          {health?.status === 'ok' ? `API (${healthMs} ms)` : 'API'}
         </span>
       </header>
 
-      {/* STEG 1: KORPUS (KONTEKST FOR SØK) */}
-      <section className="context-bar-card" aria-label="Steg 1: Korpus (kontekst for søket)">
+      {/* KORPUS-KONTEKST */}
+      <section className="context-bar-card" aria-label="Korpus (kontekst for søket)">
         <div className="context-bar-row">
           <div className="context-step-info">
-            <span className="step-badge">1. Korpus</span>
+            <span className="step-badge">Korpus</span>
             {corpus.enabled && corpus.size > 0 ? (
               <div className="corpus-active-summary">
                 <strong>{corpus.label}</strong>
@@ -452,7 +413,7 @@ export const App: React.FC = () => {
             ) : (
               <div className="corpus-active-summary">
                 <strong>Hele boksamlingen</strong>
-                <span className="tab-badge">713 913 bøker · 38,5 mrd. tokens</span>
+                <span className="muted">(713 913 bøker · 38,5 mrd. ord)</span>
               </div>
             )}
           </div>
@@ -463,7 +424,7 @@ export const App: React.FC = () => {
               className="btn-secondary"
               onClick={() => setCorpusDialogOpen(true)}
             >
-              {corpus.size > 0 ? 'Endre korpus…' : 'Velg / last opp korpus…'}
+              {corpus.size > 0 ? 'Endre korpus…' : 'Definer korpus…'}
             </button>
 
             {corpus.size > 0 && (
@@ -494,128 +455,150 @@ export const App: React.FC = () => {
         corpus={corpus}
         onCorpusChange={handleCorpusUpdate}
         onClose={() => setCorpusDialogOpen(false)}
-        onLog={appendLog}
       />
 
-      {/* STEG 2: SØKEUTTRYKK */}
-      <search className="command-dock" aria-label="Steg 2: Søkeuttrykk">
-        <form onSubmit={handleFormSubmit} className="command-form">
-          <div className="omnibox-row">
-            <div className="step-header-inline">
-              <span className="step-badge">2. Søkeuttrykk</span>
-              <label htmlFor={searchInputId} className="command-label-inline">
-                Enkeltord, ordpar, <code>^anker</code> eller <code>"frase"</code> – bruk komma (<code>,</code>) for å sammenligne flere
-              </label>
-            </div>
-            <div className="omnibox-container">
-              <input
-                id={searchInputId}
-                name="q"
-                type="search"
-                className="omnibox-input"
-                value={queryText}
-                placeholder='Søk: demokrati, diktatur eller demokrati ^diktatur, "i forhold til"'
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                enterKeyHint="search"
-                onChange={(e) => setQueryText(e.target.value)}
-              />
-              <span className="syntax-live-badge">{badgeLabel}</span>
-              <button
-                type="submit"
-                className="btn-submit-search"
-                disabled={isBusy || parsedList.length === 0}
-              >
-                {isBusy ? 'Kjører…' : 'Søk'}
-              </button>
-            </div>
-          </div>
-
-          <div className="subbar-row">
-            <div className="examples-bar" aria-label="Eksempelsøk">
-              {EXAMPLE_QUERIES.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  className={`example-chip ${
-                    queryText.trim() === q ? 'example-chip-active' : ''
-                  }`}
-                  onClick={() => handleRunExample(q)}
-                >
-                  <code>{q}</code>
-                </button>
-              ))}
-            </div>
-
-            <fieldset className="window-fieldset">
-              <legend className="visually-hidden">Vindu</legend>
-              <div className="slider-wrap">
-                <label htmlFor={windowSliderId}>
-                  Vindu: <strong>{windowSize}</strong>
-                </label>
-                <input
-                  id={windowSliderId}
-                  type="range"
-                  min={1}
-                  max={50}
-                  value={windowSize}
-                  disabled={!anyMultiWord}
-                  onChange={(e) => setWindowSize(Number(e.target.value))}
-                />
-              </div>
-              <div className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  id={symmetricCheckId}
-                  checked={symmetric}
-                  disabled={!anyMultiWord}
-                  onChange={(e) => setSymmetric(e.target.checked)}
-                />
-                <label htmlFor={symmetricCheckId}>Symmetrisk</label>
-              </div>
-            </fieldset>
-          </div>
-        </form>
-      </search>
-
-      {/* STEG 3: VELG ANALYSE [TELLING | KONKORDANS | TRENDER] */}
+      {/* HOVEDKORT: OPSJONER ØVERST -> SØKEFELT UNDER -> RESULTAT */}
       <main className="main-workspace">
         <div className="tabs">
-          <div className="tabs-header-bar">
-            <span className="step-badge">3. Analyse</span>
-            <div
-              role="tablist"
-              aria-label="Velg mellom Telling, Konkordans og Trender"
-              className="tablist"
-              {...({ focusgroup: 'tablist nomemory' } as Record<string, string>)}
-            >
-              {tabs.map((t, idx) => {
-                const selected = activeTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    ref={(el) => {
-                      tabRefs.current[t.id] = el;
-                    }}
-                    type="button"
-                    role="tab"
-                    id={`tab-${t.id}`}
-                    aria-selected={selected}
-                    tabIndex={selected ? 0 : -1}
-                    {...(selected
-                      ? ({ focusgroupstart: '' } as Record<string, string>)
-                      : {})}
-                    onClick={() => handleTabSelect(t.id)}
-                    onKeyDown={(e) => handleTabKeyDown(e, idx)}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Opsjoner i større font over søkefeltet */}
+          <div
+            role="tablist"
+            aria-label="Velg analysemodus"
+            className="tablist prominent-tablist"
+            {...({ focusgroup: 'tablist nomemory' } as Record<string, string>)}
+          >
+            {tabs.map((t, idx) => {
+              const selected = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  ref={(el) => {
+                    tabRefs.current[t.id] = el;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`tab-${t.id}`}
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  {...(selected
+                    ? ({ focusgroupstart: '' } as Record<string, string>)
+                    : {})}
+                  onClick={() => handleTabSelect(t.id)}
+                  onKeyDown={(e) => handleTabKeyDown(e, idx)}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
+          {/* Søkefelt inne i arbeidsflaten under opsjonene */}
+          <search className="inline-search-bar" aria-label="Søk i valgt modus">
+            <form onSubmit={handleFormSubmit} className="command-form">
+              <div className="omnibox-wrapper">
+                <label htmlFor={searchInputId} className="visually-hidden">
+                  Søkeuttrykk
+                </label>
+                <div className="omnibox-container">
+                  <input
+                    id={searchInputId}
+                    name="q"
+                    type="search"
+                    className="omnibox-input"
+                    value={queryText}
+                    placeholder='Søk: demokrati, diktatur eller demokrati ^diktatur, "i forhold til"'
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    enterKeyHint="search"
+                    onChange={(e) => setQueryText(e.target.value)}
+                  />
+
+                  <button
+                    type="button"
+                    className="history-dropdown-btn"
+                    aria-label="Vis siste søk"
+                    aria-expanded={historyOpen}
+                    onClick={() => setHistoryOpen((v) => !v)}
+                  >
+                    Siste søk ▾
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="btn-submit-search"
+                    disabled={isBusy || parsedList.length === 0}
+                  >
+                    {isBusy ? 'Søker…' : 'Søk'}
+                  </button>
+                </div>
+
+                {/* Dropdown med siste søk fra localStorage */}
+                {historyOpen && (
+                  <div className="history-menu" role="listbox" aria-label="Siste søk">
+                    <div className="history-menu-header">
+                      <span>Siste søk (lagret i nettleseren)</span>
+                      <button
+                        type="button"
+                        className="btn-tiny"
+                        onClick={() => setHistoryOpen(false)}
+                      >
+                        Lukk
+                      </button>
+                    </div>
+                    {recentQueries.map((rq) => (
+                      <button
+                        key={rq}
+                        type="button"
+                        className="history-item-btn"
+                        onClick={() => handleSelectQuery(rq)}
+                      >
+                        <code>{rq}</code>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="search-options-row">
+                <span className="muted" style={{ fontSize: '0.85rem' }}>
+                  {parsedList.length > 1
+                    ? `${parsedList.length} uttrykk (komma-separert)`
+                    : parsedList[0]?.predictedModeLabel}
+                </span>
+
+                <fieldset className="window-fieldset">
+                  <legend className="visually-hidden">Nærhetsvindu</legend>
+                  <div className="slider-wrap">
+                    <label htmlFor={windowSliderId}>
+                      Vindu: <strong>{windowSize}</strong>
+                    </label>
+                    <input
+                      id={windowSliderId}
+                      type="range"
+                      min={1}
+                      max={50}
+                      value={windowSize}
+                      disabled={!anyMultiWord}
+                      onChange={(e) => setWindowSize(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      id={symmetricCheckId}
+                      checked={symmetric}
+                      disabled={!anyMultiWord}
+                      onChange={(e) => setSymmetric(e.target.checked)}
+                    />
+                    <label htmlFor={symmetricCheckId}>Symmetrisk</label>
+                  </div>
+                </fieldset>
+              </div>
+            </form>
+          </search>
+
+          {/* Aktiv fane-resultat */}
           {activeTab === 'overview' && (
             <div role="tabpanel" aria-labelledby="tab-overview">
               <OverviewTab
@@ -625,17 +608,13 @@ export const App: React.FC = () => {
                 corpus={corpus}
                 loading={countLoading}
                 error={countError}
-                concData={concData}
-                concMs={concMs}
-                concLoading={concLoading}
                 onFetchConcordanceFor={(targetParsed) => {
                   setSelectedConcQuery(targetParsed);
                   setActiveTab('concordance');
                   void executeConcordanceSearch(targetParsed, concOptions, corpus);
                 }}
-                onSelectQuery={handleRunExample}
+                onSelectQuery={handleSelectQuery}
                 onSwitchTab={handleTabSelect}
-                onLog={appendLog}
               />
             </div>
           )}
@@ -683,22 +662,6 @@ export const App: React.FC = () => {
           )}
         </div>
       </main>
-
-      {/* Compact horizontal log strip at the bottom */}
-      {searchLog.length > 0 && (
-        <footer className="log-footer" aria-label="Siste søk og svartider">
-          <span className="log-footer-title">Siste kall:</span>
-          <div className="log-strip">
-            {searchLog.slice(0, 6).map((item) => (
-              <span key={item.id} className="log-pill">
-                <code>{item.queryText}</code>
-                <span className="muted">({item.endpoint})</span>
-                <strong className="log-ms-inline">{item.clientMs} ms</strong>
-              </span>
-            ))}
-          </div>
-        </footer>
-      )}
     </div>
   );
 };

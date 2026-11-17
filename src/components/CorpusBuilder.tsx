@@ -1,5 +1,11 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ActiveCorpus, buildCorpusRequest } from '../api';
+import {
+  ActiveCorpus,
+  buildCorpusRequest,
+  buildNearQueryPayload,
+  fetchNearCount,
+  parseSearchQuery,
+} from '../api';
 import { parseCorpusFile } from '../excelCorpusParser';
 
 interface CorpusBuilderProps {
@@ -8,28 +14,21 @@ interface CorpusBuilderProps {
   corpus: ActiveCorpus;
   onCorpusChange: (next: ActiveCorpus) => void;
   onClose: () => void;
-  onLog: (entry: {
-    endpoint: string;
-    queryText: string;
-    modeLabel: string;
-    total?: number;
-    docs?: number;
-    clientMs: number;
-    payload: Record<string, unknown>;
-  }) => void;
 }
 
 export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   open,
   baseUrl,
+  corpus,
   onCorpusChange,
   onClose,
-  onLog,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fileInputId = useId();
+  const textQueryId = useId();
+  const textWindowId = useId();
   const yearFromId = useId();
   const yearToId = useId();
   const langSelectId = useId();
@@ -38,6 +37,8 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const formSelectId = useId();
   const rawIdsId = useId();
 
+  const [textFilter, setTextFilter] = useState<string>('');
+  const [textWindow, setTextWindow] = useState<number>(5);
   const [yearFrom, setYearFrom] = useState<string>('1850');
   const [yearTo, setYearTo] = useState<string>('1950');
   const [lang, setLang] = useState<string>('');
@@ -53,6 +54,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open && !dialog.open) {
+      setError(null);
       dialog.showModal();
     } else if (!open && dialog.open) {
       dialog.close();
@@ -85,19 +87,6 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         size: data.size,
         sourceDescription: `Roaring (${byteSize} B · ${clientMs} ms)`,
       });
-
-      onLog({
-        endpoint: '/corpus',
-        queryText: file.name,
-        modeLabel: 'Excel/CSV → Roaring',
-        docs: data.size,
-        clientMs,
-        payload: {
-          file: file.name,
-          dhlabids: extracted.dhlabids.length,
-          urns: extracted.urns.length,
-        },
-      });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -107,12 +96,12 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
     }
   };
 
-  const handleBuildMetadata = async (e: React.FormEvent) => {
+  const handleBuild = async (e: React.FormEvent) => {
     e.preventDefault();
     setBuilding(true);
     setError(null);
     try {
-      // Hvis brukeren har limt inn dhlabid / URN i tekstfeltet, bruk det
+      // 1. Hvis brukeren har limt inn dhlabid / URN i tekstfeltet
       const pasted = rawIdsText
         .split(/[\s,;]+/)
         .map((s) => s.trim())
@@ -138,19 +127,11 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
           size: data.size,
           sourceDescription: `Roaring (${clientMs} ms)`,
         });
-        onLog({
-          endpoint: '/corpus',
-          queryText: `Liste (${pasted.length})`,
-          modeLabel: 'Roaring',
-          docs: data.size,
-          clientMs,
-          payload: req,
-        });
         onClose();
         return;
       }
 
-      // Ellers bygg fra metadata-feltene
+      // 2. Samle metadatakriterier hvis noen er satt
       const nodes: Record<string, unknown>[] = [];
       const labels: string[] = [];
 
@@ -161,7 +142,9 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         if (!Number.isNaN(lo)) yNode.from = lo;
         if (!Number.isNaN(hi)) yNode.to = hi;
         nodes.push(yNode);
-        labels.push(`${!Number.isNaN(lo) ? lo : '*'}–${!Number.isNaN(hi) ? hi : '*'}`);
+        labels.push(
+          `${!Number.isNaN(lo) ? lo : '*'}–${!Number.isNaN(hi) ? hi : '*'}`
+        );
       }
       if (lang) {
         nodes.push({ k: 'lang_doc', v: lang });
@@ -180,30 +163,88 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         labels.push(`emne:${subjectPrefix.trim()}*`);
       }
 
-      if (nodes.length === 0) {
-        throw new Error('Velg minst ett filter eller last opp en fil.');
+      let metaCorpusToken: string | null = null;
+      let metaSize = 0;
+      let totalMs = 0;
+
+      if (nodes.length > 0) {
+        const query = nodes.length === 1 ? nodes[0] : { and: nodes };
+        const { data, clientMs } = await buildCorpusRequest(baseUrl, { query });
+        metaCorpusToken = data.corpusToken;
+        metaSize = data.size;
+        totalMs += clientMs;
       }
 
-      const query = nodes.length === 1 ? nodes[0] : { and: nodes };
-      const { data, clientMs } = await buildCorpusRequest(baseUrl, { query });
-      const label = labels.join(' · ');
+      // 3. Hvis brukeren har skrevet et søkeuttrykk (near_query eller enkeltord) for å avgrense korpuset
+      const cleanText = textFilter.trim();
+      if (cleanText) {
+        const parsedText = parseSearchQuery(cleanText, textWindow, true);
+        const tempCorpus: ActiveCorpus = metaCorpusToken
+          ? {
+              enabled: true,
+              label: '',
+              corpusToken: metaCorpusToken,
+              filterIds: [],
+              size: metaSize,
+              sourceDescription: '',
+            }
+          : {
+              enabled: false,
+              label: '',
+              corpusToken: null,
+              filterIds: [],
+              size: 0,
+              sourceDescription: '',
+            };
+
+        const nearPayload = buildNearQueryPayload(parsedText, tempCorpus, {
+          returnCorpus: true,
+          maxCorpusDocs: 100000,
+        });
+        const { data: nearData, clientMs: nearMs } = await fetchNearCount(
+          baseUrl,
+          nearPayload
+        );
+        totalMs += nearMs;
+
+        if (nearData.corpusToken) {
+          const finalSize = nearData.corpusSize ?? nearData.docs;
+          const sampledNote = nearData.sampled
+            ? ` (utvalg av ${nearData.docs.toLocaleString('nb-NO')})`
+            : '';
+          labels.push(`tekst:«${cleanText}»`);
+          onCorpusChange({
+            enabled: true,
+            label: labels.join(' · '),
+            corpusToken: nearData.corpusToken,
+            filterIds: [],
+            size: finalSize,
+            sourceDescription: `Roaring fra søk${sampledNote} (${totalMs} ms)`,
+          });
+          onClose();
+          return;
+        } else {
+          throw new Error(
+            `Søket «${cleanText}» treffer ${nearData.docs.toLocaleString(
+              'nb-NO'
+            )} bøker (${nearData.total.toLocaleString(
+              'nb-NO'
+            )} forekomster på ${nearMs} ms), men serveren på 8096 returnerer ennå ikke corpusToken fra /near_query.`
+          );
+        }
+      }
+
+      if (!metaCorpusToken) {
+        throw new Error('Velg minst ett filter, søkeuttrykk eller last opp en fil.');
+      }
 
       onCorpusChange({
         enabled: true,
-        label,
-        corpusToken: data.corpusToken,
+        label: labels.join(' · '),
+        corpusToken: metaCorpusToken,
         filterIds: [],
-        size: data.size,
-        sourceDescription: `Roaring (${clientMs} ms)`,
-      });
-
-      onLog({
-        endpoint: '/corpus',
-        queryText: label,
-        modeLabel: 'Roaring',
-        docs: data.size,
-        clientMs,
-        payload: { query },
+        size: metaSize,
+        sourceDescription: `Roaring (${totalMs} ms)`,
       });
       onClose();
     } catch (err) {
@@ -221,7 +262,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       onClose={onClose}
     >
       <div className="modal-header">
-        <h2>Velg eller last opp korpus</h2>
+        <h2>Definer korpus</h2>
         <button
           type="button"
           className="btn-icon"
@@ -233,7 +274,11 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       </div>
 
       {error && (
-        <div role="alert" className="error-banner" style={{ marginBlockEnd: '0.75rem' }}>
+        <div
+          role="alert"
+          className="error-banner"
+          style={{ marginBlockEnd: '0.85rem' }}
+        >
           {error}
         </div>
       )}
@@ -242,13 +287,13 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       <div className="upload-dropzone" style={{ marginBlockEnd: '1rem' }}>
         <div className="upload-row">
           <div>
-            <strong>Fra fil (.xlsx eller .csv)</strong>
+            <strong>Last opp korpusfil (.xlsx eller .csv)</strong>
             <div className="muted" style={{ fontSize: '0.82rem' }}>
-              Leser kolonnen <code>dhlabid</code> eller <code>urn</code> og lager Roaring-bitmap
+              Konverterer kolonnen <code>dhlabid</code> eller <code>urn</code> til Roaring-bitmap
             </div>
           </div>
           <label htmlFor={fileInputId} className="btn-secondary file-label-btn">
-            {building ? 'Leser…' : 'Last opp fil…'}
+            {building ? 'Leser…' : 'Velg fil…'}
           </label>
           <input
             ref={fileInputRef}
@@ -264,8 +309,42 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         </div>
       </div>
 
-      {/* 2. Enkelt metadata- eller ID-skjema */}
-      <form onSubmit={(e) => void handleBuildMetadata(e)} className="modal-form">
+      <form onSubmit={(e) => void handleBuild(e)} className="modal-form">
+        {/* 2. Begrens på søkeuttrykk (near_query eller enkeltord) */}
+        <div className="field-stack" style={{ marginBlockEnd: '0.85rem' }}>
+          <label htmlFor={textQueryId}>
+            Begrens på søkeuttrykk i teksten (enkeltord, ordpar eller frase)
+          </label>
+          <div className="input-with-btn">
+            <input
+              id={textQueryId}
+              type="text"
+              value={textFilter}
+              placeholder='f.eks. sjarken, demokrati diktatur eller "i forhold til"'
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              onChange={(e) => setTextFilter(e.target.value)}
+            />
+            <div className="field-inline" style={{ flex: 'none' }}>
+              <label htmlFor={textWindowId}>Vindu</label>
+              <input
+                id={textWindowId}
+                type="text"
+                inputMode="numeric"
+                className="year-input"
+                style={{ inlineSize: '3.5rem' }}
+                value={textWindow}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!Number.isNaN(v)) setTextWindow(v);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Metadata */}
         <div className="modal-grid">
           <div className="field-stack">
             <label htmlFor={yearFromId}>Fra år</label>
@@ -359,6 +438,18 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         </div>
 
         <div className="modal-footer">
+          {corpus.corpusToken && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ marginInlineEnd: 'auto' }}
+              onClick={() => {
+                void navigator.clipboard.writeText(corpus.corpusToken!);
+              }}
+            >
+              Kopier Roaring-token
+            </button>
+          )}
           <button type="button" className="btn-secondary" onClick={onClose}>
             Avbryt
           </button>

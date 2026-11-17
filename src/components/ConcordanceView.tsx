@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import { ConcordanceResponse, ParsedQuery } from '../api';
+import { downloadExcelFile } from '../excelExport';
 
 interface ConcordanceViewProps {
   queryText: string;
@@ -34,40 +35,41 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
 }) => {
   const captionId = useId();
   const limitSelectId = useId();
-  const contextSelectId = useId();
 
-  const hitWordsCount =
-    parsed.matchMode === 'sequence' ? Math.max(1, parsed.terms.length) : 1;
-  const maxContextEach = Math.max(1, Math.floor((25 - hitWordsCount) / 2));
+  const exportExcel = () => {
+    if (!data || data.rows.length === 0) return;
+    const matrix: (string | number)[][] = [
+      ['dhlabid', 'left', 'hit', 'right'],
+      ...data.rows.map((r) => [r.dhlabid, r.left, r.hit, r.right]),
+    ];
+    downloadExcelFile(
+      `konkordans_${queryText.replace(/\s+/g, '_')}.xlsx`,
+      matrix
+    );
+  };
 
   return (
     <div className="panel-inner">
-      {parsedList.length > 1 && (
-        <div className="preset-row" style={{ marginBlockEnd: 0 }}>
-          <span className="preset-label">Vis konkordans for:</span>
-          {parsedList.map((p) => (
-            <button
-              key={p.raw}
-              type="button"
-              className={`example-chip ${
-                p.raw === parsed.raw ? 'example-chip-active' : ''
-              }`}
-              onClick={() => onSelectParsed(p)}
-            >
-              <code>{p.raw}</code>
-            </button>
-          ))}
-        </div>
-      )}
       <div className="conc-toolbar">
-        <div className="conc-info">
-          <strong>Offentlig konkordans (`/concordance_public`)</strong>
-          <span className="muted">
-            Maks 25 ord per linje (klippet ved avsnitt) · Maks 10 % av hver bok · Fast server-seed
-          </span>
-        </div>
-
         <div className="conc-controls">
+          {parsedList.length > 1 && (
+            <div className="field-inline">
+              <span>Uttrykk:</span>
+              {parsedList.map((p) => (
+                <button
+                  key={p.raw}
+                  type="button"
+                  className={`example-chip ${
+                    p.raw === parsed.raw ? 'example-chip-active' : ''
+                  }`}
+                  onClick={() => onSelectParsed(p)}
+                >
+                  <code>{p.raw}</code>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="field-inline">
             <label htmlFor={limitSelectId}>Antall linjer</label>
             <select
@@ -81,48 +83,45 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                 })
               }
             >
-              <option value={20}>20 linjer (raskest)</option>
-              <option value={30}>30 linjer (anbefalt i demo)</option>
-              <option value={50}>50 linjer</option>
-              <option value={100}>100 linjer</option>
-              <option value={200}>200 linjer (maks)</option>
-            </select>
-          </div>
-
-          <div className="field-inline">
-            <label htmlFor={contextSelectId}>Kontekst (før/etter)</label>
-            <select
-              id={contextSelectId}
-              value={Math.min(before, maxContextEach)}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                onOptionsChange({ limit, before: v, after: v });
-              }}
-            >
-              {[5, 8, 10, 12]
-                .filter((v) => v <= maxContextEach)
-                .map((v) => (
-                  <option key={v} value={v}>
-                    ±{v} ord
-                  </option>
-                ))}
+              <option value={20}>20</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
             </select>
           </div>
 
           <button
             type="button"
-            className="btn-primary"
+            className="btn-secondary"
             onClick={onFetch}
             disabled={loading || parsed.terms.length === 0 || parsed.hasWildcardOrGroup}
           >
-            {loading ? 'Henter eksempler…' : 'Hent eksempler'}
+            {loading ? 'Henter…' : 'Hent på nytt'}
           </button>
+
+          {data && data.rows.length > 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={exportExcel}
+            >
+              Excel (.xlsx)
+            </button>
+          )}
         </div>
+
+        {data && (
+          <div className="muted" style={{ fontSize: '0.85rem' }}>
+            {data.lines} linjer fra {data.books} bøker ·{' '}
+            <strong className="speed-highlight">{clientMs} ms</strong>
+          </div>
+        )}
       </div>
 
       {parsed.hasWildcardOrGroup && (
         <div role="alert" className="error-banner">
-          Wildcard (<code>*</code>) støttes i tellinger, men er ikke tillatt i <code>/concordance_public</code> (gir 400).
+          Wildcard (<code>*</code>) støttes i tellinger og trender, men ikke i konkordans.
         </div>
       )}
 
@@ -132,34 +131,10 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
         </div>
       )}
 
-      {data && (
-        <div className="kpi-strip">
-          <div className="kpi-mini">
-            <span className="kpi-mini-label">Viste linjer</span>
-            <strong className="kpi-mini-val">{data.lines}</strong>
-          </div>
-          <div className="kpi-mini">
-            <span className="kpi-mini-label">Unike bøker i utvalget</span>
-            <strong className="kpi-mini-val">{data.books}</strong>
-          </div>
-          <div className="kpi-mini">
-            <span className="kpi-mini-label">Trefford (anker/frase)</span>
-            <strong className="kpi-mini-val">
-              {parsed.anchorWord ?? parsed.terms[0] ?? '–'}
-            </strong>
-          </div>
-          <div className="kpi-mini">
-            <span className="kpi-mini-label">Målt svartid</span>
-            <strong className="kpi-mini-val speed-highlight">
-              {clientMs !== null ? `${clientMs} ms (${(clientMs / 1000).toFixed(2)} s)` : '–'}
-            </strong>
-          </div>
-        </div>
-      )}
-
-      {!data && !loading && !error && (
-        <div className="empty-box">
-          Trykk <strong>«Hent eksempler»</strong> for å hente {limit} konkordanslinjer for «{queryText}».
+      {loading && !data && (
+        <div role="status" aria-live="polite" className="loading-card">
+          <span className="spinner" aria-hidden="true" />
+          <span>Henter konkordanslinjer…</span>
         </div>
       )}
 
@@ -171,8 +146,8 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
           className="table-wrapper kwic-table-wrapper"
         >
           <table className="kwic-table">
-            <caption id={captionId} className="table-caption">
-              Konkordansutvalg for «{queryText}» ({data.lines} linjer fra {data.books} bøker)
+            <caption id={captionId} className="visually-hidden">
+              Konkordans for {queryText}
             </caption>
             <thead>
               <tr>
