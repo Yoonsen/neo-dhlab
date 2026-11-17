@@ -177,7 +177,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </strong>
               <span className="metric-sub">
                 av {totalBooksInScope.toLocaleString('nb-NO')} bøker (
-                {((result.docs / totalBooksInScope) * 100).toFixed(2)} %)
+                {((result.docs / totalBooksInScope) * 100).toFixed(2)} %) · disp{' '}
+                {result.total > 0 ? (result.docs / result.total).toFixed(2) : '0'} (
+                {result.docs > 0 ? (result.total / result.docs).toFixed(1) : '0'} treff/bok)
               </span>
             </div>
 
@@ -259,42 +261,56 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <th scope="col">Tellemåte</th>
                   <th scope="col">Treff</th>
                   <th scope="col">Bøker</th>
+                  <th scope="col">Dispersjon (bøker/treff)</th>
+                  <th scope="col">Treff/bok</th>
                   <th scope="col">Andel</th>
                   <th scope="col">Tid</th>
                   <th scope="col">Konkordans</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.parsed.raw}>
-                    <th scope="row">
-                      <code>{item.parsed.raw}</code>
-                    </th>
-                    <td>
-                      <span className="badge-mode">{item.result.countMode}</span>
-                    </td>
-                    <td>
-                      <strong>{item.result.total.toLocaleString('nb-NO')}</strong>
-                    </td>
-                    <td>{item.result.docs.toLocaleString('nb-NO')}</td>
-                    <td>
-                      {((item.result.docs / totalBooksInScope) * 100).toFixed(2)} %
-                    </td>
-                    <td>
-                      <span className="speed-pill">{item.clientMs} ms</span>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn-tiny"
-                        disabled={item.parsed.hasWildcardOrGroup}
-                        onClick={() => onFetchConcordanceFor(item.parsed)}
-                      >
-                        Vis →
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item) => {
+                  const disp =
+                    item.result.total > 0
+                      ? (item.result.docs / item.result.total).toFixed(2)
+                      : '0';
+                  const perBook =
+                    item.result.docs > 0
+                      ? (item.result.total / item.result.docs).toFixed(1)
+                      : '0';
+                  return (
+                    <tr key={item.parsed.raw}>
+                      <th scope="row">
+                        <code>{item.parsed.raw}</code>
+                      </th>
+                      <td>
+                        <span className="badge-mode">{item.result.countMode}</span>
+                      </td>
+                      <td>
+                        <strong>{item.result.total.toLocaleString('nb-NO')}</strong>
+                      </td>
+                      <td>{item.result.docs.toLocaleString('nb-NO')}</td>
+                      <td>{disp}</td>
+                      <td>{perBook}</td>
+                      <td>
+                        {((item.result.docs / totalBooksInScope) * 100).toFixed(2)} %
+                      </td>
+                      <td>
+                        <span className="speed-pill">{item.clientMs} ms</span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-tiny"
+                          disabled={item.parsed.hasWildcardOrGroup}
+                          onClick={() => onFetchConcordanceFor(item.parsed)}
+                        >
+                          Vis →
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {pendingQueries.map((pq) => (
                   <tr key={pq}>

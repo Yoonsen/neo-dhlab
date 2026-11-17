@@ -17,7 +17,13 @@ interface TrendChartProps {
   loading: boolean;
 }
 
-type MetricType = 'perMillion' | 'total' | 'docShare';
+type MetricType =
+  | 'perMillion'
+  | 'cohort'
+  | 'dispersion'
+  | 'concentration'
+  | 'docShare'
+  | 'total';
 
 export const SERIES_COLORS = [
   '#0b57d0',
@@ -55,7 +61,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   }, [seriesList]);
 
   const computedSeries = useMemo(() => {
-    return seriesList.map((item) => {
+    const base = seriesList.map((item) => {
       const byYear = new Map<number, YearCountRow>();
       item.rows.forEach((r) => byYear.set(r.year, r));
 
@@ -71,49 +77,122 @@ export const TrendChart: React.FC<TrendChartProps> = ({
           }
       );
 
-      const rawValues = alignedRows.map((r) => {
-        if (metric === 'perMillion') return r.perMillion;
-        if (metric === 'total') return r.total;
-        return r.books > 0 ? (r.docs / r.books) * 100 : 0;
+      const half = smoothing <= 1 ? 0 : Math.floor(smoothing / 2);
+
+      // Glattede basisverdier (brukes også for Kohort og Dispersjon over vinduet)
+      const smoothedPerMillion = alignedRows.map((_, idx) => {
+        const lo = Math.max(0, idx - half);
+        const hi = Math.min(alignedRows.length - 1, idx + half);
+        let sum = 0;
+        for (let i = lo; i <= hi; i++) sum += alignedRows[i].perMillion;
+        return sum / (hi - lo + 1);
       });
 
-      const smoothed =
-        smoothing <= 1
-          ? rawValues
-          : rawValues.map((_, idx) => {
-              const half = Math.floor(smoothing / 2);
-              const lo = Math.max(0, idx - half);
-              const hi = Math.min(rawValues.length - 1, idx + half);
-              let sum = 0;
-              for (let i = lo; i <= hi; i++) sum += rawValues[i];
-              return sum / (hi - lo + 1);
-            });
+      const values = alignedRows.map((_, idx) => {
+        const lo = Math.max(0, idx - half);
+        const hi = Math.min(alignedRows.length - 1, idx + half);
+        const count = hi - lo + 1;
+
+        if (metric === 'perMillion' || metric === 'cohort') {
+          return smoothedPerMillion[idx];
+        }
+        if (metric === 'total') {
+          let sum = 0;
+          for (let i = lo; i <= hi; i++) sum += alignedRows[i].total;
+          return sum / count;
+        }
+        if (metric === 'docShare') {
+          let sum = 0;
+          for (let i = lo; i <= hi; i++) {
+            const r = alignedRows[i];
+            sum += r.books > 0 ? (r.docs / r.books) * 100 : 0;
+          }
+          return sum / count;
+        }
+        if (metric === 'dispersion') {
+          // Dispersjon: docs / total over glattingsvinduet (i intervallet [0, 1], der 1 = hvert treff i ny bok)
+          let sumDocs = 0;
+          let sumTotal = 0;
+          for (let i = lo; i <= hi; i++) {
+            sumDocs += alignedRows[i].docs;
+            sumTotal += alignedRows[i].total;
+          }
+          return sumTotal > 0 ? sumDocs / sumTotal : 0;
+        }
+        // concentration: total / docs (gjennomsnittlig antall treff per bok med treff)
+        let sumDocs = 0;
+        let sumTotal = 0;
+        for (let i = lo; i <= hi; i++) {
+          sumDocs += alignedRows[i].docs;
+          sumTotal += alignedRows[i].total;
+        }
+        return sumDocs > 0 ? sumTotal / sumDocs : 0;
+      });
 
       const totalHits = alignedRows.reduce((acc, r) => acc + r.total, 0);
       const totalDocs = alignedRows.reduce((acc, r) => acc + r.docs, 0);
+      const overallDispersion = totalHits > 0 ? totalDocs / totalHits : 0;
+      const overallConcentration = totalDocs > 0 ? totalHits / totalDocs : 0;
 
       return {
         ...item,
         alignedRows,
-        values: smoothed,
+        values,
         totalHits,
         totalDocs,
+        overallDispersion,
+        overallConcentration,
       };
     });
+
+    // Hvis Kohort er valgt, normaliser hvert år slik at kurvene summerer til 100 %
+    if (metric === 'cohort' && base.length > 0) {
+      return base.map((s) => ({
+        ...s,
+        values: s.values.map((v, idx) => {
+          const yearSum = base.reduce((acc, other) => acc + other.values[idx], 0);
+          return yearSum > 0 ? (v / yearSum) * 100 : 0;
+        }),
+      }));
+    }
+
+    return base;
   }, [seriesList, years, metric, smoothing]);
 
   const buildExportMatrix = (): (string | number)[][] => {
     const header: (string | number)[] = ['year', 'books', 'tokens'];
     computedSeries.forEach((s) => {
-      header.push(`${s.query}_total`, `${s.query}_docs`, `${s.query}_perMillion`);
+      header.push(
+        `${s.query}_total`,
+        `${s.query}_docs`,
+        `${s.query}_perMillion`,
+        `${s.query}_dispersion_docs_per_hit`,
+        `${s.query}_hits_per_doc`
+      );
+      if (computedSeries.length > 1) {
+        header.push(`${s.query}_cohort_pct`);
+      }
     });
     const matrix: (string | number)[][] = [header];
     years.forEach((y, idx) => {
       const baseRow = computedSeries[0].alignedRows[idx];
       const rowCells: (string | number)[] = [y, baseRow.books, baseRow.tokens];
+      const yearTotalHits = computedSeries.reduce(
+        (acc, s) => acc + s.alignedRows[idx].total,
+        0
+      );
       computedSeries.forEach((s) => {
         const r = s.alignedRows[idx];
-        rowCells.push(r.total, r.docs, r.perMillion);
+        const disp = r.total > 0 ? Number((r.docs / r.total).toFixed(4)) : 0;
+        const conc = r.docs > 0 ? Number((r.total / r.docs).toFixed(2)) : 0;
+        rowCells.push(r.total, r.docs, r.perMillion, disp, conc);
+        if (computedSeries.length > 1) {
+          const cohortPct =
+            yearTotalHits > 0
+              ? Number(((r.total / yearTotalHits) * 100).toFixed(2))
+              : 0;
+          rowCells.push(cohortPct);
+        }
       });
       matrix.push(rowCells);
     });
@@ -163,6 +242,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const plotH = height - padTop - padBottom;
 
   const maxVal = useMemo(() => {
+    if (metric === 'cohort') return 100;
+    if (metric === 'dispersion') return 1;
     let m = 0.0001;
     for (const s of computedSeries) {
       for (const v of s.values) {
@@ -170,7 +251,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       }
     }
     return m;
-  }, [computedSeries]);
+  }, [computedSeries, metric]);
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
 
@@ -185,7 +266,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
   const formatMetric = (v: number) => {
     if (metric === 'total') return Math.round(v).toLocaleString('nb-NO');
-    if (metric === 'docShare') return `${v.toFixed(2)} %`;
+    if (metric === 'docShare' || metric === 'cohort') return `${v.toFixed(1)} %`;
+    if (metric === 'dispersion') return v.toFixed(3);
+    if (metric === 'concentration') return `${v.toFixed(2)} treff/bok`;
     return v.toLocaleString('nb-NO', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -210,16 +293,44 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               />
               <label htmlFor={`${metricGroupName}-pm`}>Per million ord</label>
             </span>
+
             <span className="radio-item">
               <input
                 type="radio"
-                id={`${metricGroupName}-tot`}
+                id={`${metricGroupName}-cohort`}
                 name={metricGroupName}
-                checked={metric === 'total'}
-                onChange={() => setMetric('total')}
+                checked={metric === 'cohort'}
+                onChange={() => setMetric('cohort')}
               />
-              <label htmlFor={`${metricGroupName}-tot`}>Absolutt antall</label>
+              <label htmlFor={`${metricGroupName}-cohort`}>Kohort (%)</label>
             </span>
+
+            <span className="radio-item">
+              <input
+                type="radio"
+                id={`${metricGroupName}-disp`}
+                name={metricGroupName}
+                checked={metric === 'dispersion'}
+                onChange={() => setMetric('dispersion')}
+              />
+              <label htmlFor={`${metricGroupName}-disp`}>
+                Dispersjon (bøker/treff)
+              </label>
+            </span>
+
+            <span className="radio-item">
+              <input
+                type="radio"
+                id={`${metricGroupName}-conc`}
+                name={metricGroupName}
+                checked={metric === 'concentration'}
+                onChange={() => setMetric('concentration')}
+              />
+              <label htmlFor={`${metricGroupName}-conc`}>
+                Tetthet (treff/bok)
+              </label>
+            </span>
+
             <span className="radio-item">
               <input
                 type="radio"
@@ -229,6 +340,17 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 onChange={() => setMetric('docShare')}
               />
               <label htmlFor={`${metricGroupName}-doc`}>Andel bøker (%)</label>
+            </span>
+
+            <span className="radio-item">
+              <input
+                type="radio"
+                id={`${metricGroupName}-tot`}
+                name={metricGroupName}
+                checked={metric === 'total'}
+                onChange={() => setMetric('total')}
+              />
+              <label htmlFor={`${metricGroupName}-tot`}>Absolutt antall</label>
             </span>
           </div>
         </fieldset>
@@ -291,7 +413,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             </strong>
             <span className="muted">
               {s.totalHits.toLocaleString('nb-NO')} treff ·{' '}
-              {s.totalDocs.toLocaleString('nb-NO')} bøker
+              {s.totalDocs.toLocaleString('nb-NO')} bøker · disp{' '}
+              {s.overallDispersion.toFixed(2)} ({s.overallConcentration.toFixed(1)}/bok)
             </span>
             <span className="speed-pill">{s.clientMs} ms</span>
           </div>
@@ -339,6 +462,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                     >
                       {metric === 'total'
                         ? Math.round(t).toLocaleString('nb-NO')
+                        : metric === 'cohort' || metric === 'docShare'
+                        ? `${t.toFixed(0)} %`
                         : t.toFixed(t >= 10 ? 1 : 2)}
                     </text>
                   </g>
@@ -455,7 +580,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 </div>
               ) : (
                 <span>
-                  Hold pekeren over grafen for verdier per år.
+                  {metric === 'dispersion'
+                    ? 'Dispersjon (bøker / treff ∈ [0, 1]): 1,0 betyr at hvert treff står i en ny bok (jevnt spredt), lavt tall betyr at treffene klumper seg i få bøker.'
+                    : metric === 'concentration'
+                    ? 'Tetthet (treff / bøker med treff): gjennomsnittlig antall forekomster per bok der uttrykket forekommer.'
+                    : metric === 'cohort'
+                    ? 'Kohort (%): hver kurves relative andel av kurvegruppens samlede frekvens hvert år (summerer til 100 %).'
+                    : 'Hold pekeren over grafen for verdier per år.'}
                 </span>
               )}
             </figcaption>
@@ -478,7 +609,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                     <th scope="col">Bøker i korpus</th>
                     {computedSeries.map((s) => (
                       <th key={s.query} scope="col">
-                        <code>{s.query}</code> (per mill. / treff)
+                        <code>{s.query}</code> (verdi / treff / bøker)
                       </th>
                     ))}
                   </tr>
@@ -496,11 +627,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                           <td>{baseRow.books.toLocaleString('nb-NO')}</td>
                           {computedSeries.map((s) => {
                             const r = s.alignedRows[idx];
+                            const v = s.values[idx] ?? 0;
                             return (
                               <td key={s.query}>
-                                <strong>{r.perMillion.toFixed(2)}</strong>{' '}
+                                <strong>{formatMetric(v)}</strong>{' '}
                                 <span className="muted">
-                                  ({r.total.toLocaleString('nb-NO')})
+                                  ({r.total.toLocaleString('nb-NO')} i {r.docs})
                                 </span>
                               </td>
                             );
