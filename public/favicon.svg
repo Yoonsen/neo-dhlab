@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- NB Aubergine bakgrunn -->
+  <rect width="32" height="32" rx="7" fill="#40263E" />
+  <!-- NB-bokflaten (det gylne snitt) i Fersken 20 -->
+  <rect x="8.5" y="4.5" width="13.5" height="20" rx="1.5" fill="#FDF2F2" />
+  <!-- De forskjøvne digitale prikkene (Roaring-bitmaps / NB-profil) -->
+  <circle cx="5.2" cy="11" r="1.4" fill="#F3D9C9" />
+  <circle cx="17.5" cy="27.5" r="1.4" fill="#F3D9C9" />
+  <!-- Prikkene inne i boken (som også danner en stigende trend/matrise) -->
+  <circle cx="12.2" cy="11" r="1.35" fill="#40263E" />
+  <circle cx="17.8" cy="11" r="1.35" fill="#40263E" />
+  <circle cx="17.8" cy="15.8" r="1.35" fill="#40263E" />
+  <circle cx="17.8" cy="20.6" r="1.35" fill="#40263E" />
+  <!-- Liten gnist/trendstrek i varm korall nederst til høyre -->
+  <path d="M23.5 23.5 L26.5 19.5 L29 21" fill="none" stroke="#F3D9C9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
