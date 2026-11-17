@@ -27,6 +27,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fileInputId = useId();
+  const corpusNameId = useId();
   const textQueryId = useId();
   const textWindowId = useId();
   const yearFromId = useId();
@@ -37,6 +38,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const formSelectId = useId();
   const rawIdsId = useId();
 
+  const [customName, setCustomName] = useState<string>('');
   const [textFilter, setTextFilter] = useState<string>('');
   const [textWindow, setTextWindow] = useState<number>(5);
   const [yearFrom, setYearFrom] = useState<string>('1850');
@@ -81,7 +83,8 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
 
       onCorpusChange({
         enabled: true,
-        label: file.name.replace(/\.(xlsx|csv|tsv|txt)$/i, ''),
+        label:
+          customName.trim() || file.name.replace(/\.(xlsx|csv|tsv|txt)$/i, ''),
         corpusToken: data.corpusToken,
         filterIds: [],
         size: data.size,
@@ -240,7 +243,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
 
       onCorpusChange({
         enabled: true,
-        label: labels.join(' · '),
+        label: customName.trim() || labels.join(' · '),
         corpusToken: metaCorpusToken,
         filterIds: [],
         size: metaSize,
@@ -310,6 +313,19 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       </div>
 
       <form onSubmit={(e) => void handleBuild(e)} className="modal-form">
+        <div className="field-stack" style={{ marginBlockEnd: '0.85rem' }}>
+          <label htmlFor={corpusNameId}>
+            Navn på korpus (lagres automatisk under «Mine korpus»)
+          </label>
+          <input
+            id={corpusNameId}
+            type="text"
+            value={customName}
+            placeholder="f.eks. Skibsvrag, Ibsen-drama eller Avhandlinger 1990"
+            onChange={(e) => setCustomName(e.target.value)}
+          />
+        </div>
+
         {/* 2. Begrens på søkeuttrykk (near_query eller enkeltord) */}
         <div className="field-stack" style={{ marginBlockEnd: '0.85rem' }}>
           <label htmlFor={textQueryId}>

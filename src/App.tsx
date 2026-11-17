@@ -20,6 +20,28 @@ import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendCh
 type TabId = 'overview' | 'concordance' | 'trends';
 
 const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
+const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
+
+interface SavedCorpusEntry {
+  id: string;
+  label: string;
+  corpusToken: string;
+  size: number;
+  sourceDescription: string;
+  savedAt: string;
+}
+
+function loadSavedCorpora(): SavedCorpusEntry[] {
+  try {
+    const raw = localStorage.getItem(SAVED_CORPORA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // ignore storage errors
+  }
+  return [];
+}
 
 const DEFAULT_RECENT_QUERIES: string[] = [
   'demokrati, diktatur',
@@ -65,6 +87,8 @@ export const App: React.FC = () => {
     sourceDescription: '',
   });
   const [corpusDialogOpen, setCorpusDialogOpen] = useState<boolean>(false);
+  const [savedCorpora, setSavedCorpora] = useState<SavedCorpusEntry[]>(loadSavedCorpora);
+  const [corpusMenuOpen, setCorpusMenuOpen] = useState<boolean>(false);
 
   // Active option tab ABOVE the search input
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -327,10 +351,47 @@ export const App: React.FC = () => {
 
   const handleCorpusUpdate = (nextCorpus: ActiveCorpus) => {
     setCorpus(nextCorpus);
+    setCorpusMenuOpen(false);
+    if (nextCorpus.enabled && nextCorpus.corpusToken && nextCorpus.size > 0) {
+      setSavedCorpora((prev) => {
+        const entry: SavedCorpusEntry = {
+          id: `${Date.now()}`,
+          label: nextCorpus.label,
+          corpusToken: nextCorpus.corpusToken!,
+          size: nextCorpus.size,
+          sourceDescription: nextCorpus.sourceDescription,
+          savedAt: new Date().toLocaleDateString('nb-NO'),
+        };
+        const filtered = prev.filter(
+          (c) =>
+            c.corpusToken !== entry.corpusToken && c.label !== entry.label
+        );
+        const next = [entry, ...filtered].slice(0, 25);
+        try {
+          localStorage.setItem(SAVED_CORPORA_KEY, JSON.stringify(next));
+        } catch {
+          // ignore storage errors
+        }
+        return next;
+      });
+    }
     setTrendSeries([]);
     setConcData(null);
     setCountItems([]);
     runForActiveTab(parsedList, activeTab, nextCorpus);
+  };
+
+  const handleDeleteSavedCorpus = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSavedCorpora((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      try {
+        localStorage.setItem(SAVED_CORPORA_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
   };
 
   const handleTabSelect = (nextTab: TabId) => {
@@ -418,13 +479,27 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          <div className="context-actions">
+          <div className="context-actions" style={{ position: 'relative' }}>
+            {savedCorpora.length > 0 && (
+              <button
+                type="button"
+                className="history-dropdown-btn"
+                aria-expanded={corpusMenuOpen}
+                onClick={() => setCorpusMenuOpen((v) => !v)}
+              >
+                Mine korpus ({savedCorpora.length}) ▾
+              </button>
+            )}
+
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => setCorpusDialogOpen(true)}
+              onClick={() => {
+                setCorpusMenuOpen(false);
+                setCorpusDialogOpen(true);
+              }}
             >
-              {corpus.size > 0 ? 'Endre korpus…' : 'Definer korpus…'}
+              {corpus.size > 0 ? 'Nytt / endre korpus…' : 'Definer korpus…'}
             </button>
 
             {corpus.size > 0 && (
@@ -442,8 +517,89 @@ export const App: React.FC = () => {
                   })
                 }
               >
-                Nullstill
+                Hele samlingen
               </button>
+            )}
+
+            {corpusMenuOpen && (
+              <div
+                className="history-menu"
+                style={{
+                  insetInlineStart: 'auto',
+                  insetInlineEnd: 0,
+                  inlineSize: 'min(420px, 90vw)',
+                }}
+                role="listbox"
+                aria-label="Mine lagrede korpus"
+              >
+                <div className="history-menu-header">
+                  <span>Mine korpus (lagret i nettleseren)</span>
+                  <button
+                    type="button"
+                    className="btn-tiny"
+                    onClick={() => setCorpusMenuOpen(false)}
+                  >
+                    Lukk
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="history-item-btn"
+                  onClick={() =>
+                    handleCorpusUpdate({
+                      enabled: false,
+                      label: 'Hele samlingen',
+                      corpusToken: null,
+                      filterIds: [],
+                      size: 0,
+                      sourceDescription: '',
+                    })
+                  }
+                >
+                  <strong>Hele boksamlingen</strong>{' '}
+                  <span className="muted">(713 913 bøker)</span>
+                </button>
+                {savedCorpora.map((sc) => (
+                  <div
+                    key={sc.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.4rem',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="history-item-btn"
+                      style={{ flex: 1 }}
+                      onClick={() =>
+                        handleCorpusUpdate({
+                          enabled: true,
+                          label: sc.label,
+                          corpusToken: sc.corpusToken,
+                          filterIds: [],
+                          size: sc.size,
+                          sourceDescription: sc.sourceDescription,
+                        })
+                      }
+                    >
+                      <strong>{sc.label}</strong>{' '}
+                      <span className="muted">
+                        ({sc.size.toLocaleString('nb-NO')} bøker)
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-tiny"
+                      aria-label={`Slett ${sc.label}`}
+                      onClick={(e) => handleDeleteSavedCorpus(sc.id, e)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
