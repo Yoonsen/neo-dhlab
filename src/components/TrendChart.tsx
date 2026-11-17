@@ -20,7 +20,6 @@ interface TrendChartProps {
 type MetricType =
   | 'perMillion'
   | 'cohort'
-  | 'dispersion'
   | 'concentration'
   | 'docShare'
   | 'total';
@@ -109,16 +108,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
           }
           return sum / count;
         }
-        if (metric === 'dispersion') {
-          // Dispersjon: docs / total over glattingsvinduet (i intervallet [0, 1], der 1 = hvert treff i ny bok)
-          let sumDocs = 0;
-          let sumTotal = 0;
-          for (let i = lo; i <= hi; i++) {
-            sumDocs += alignedRows[i].docs;
-            sumTotal += alignedRows[i].total;
-          }
-          return sumTotal > 0 ? sumDocs / sumTotal : 0;
-        }
         // concentration: total / docs (gjennomsnittlig antall treff per bok med treff)
         let sumDocs = 0;
         let sumTotal = 0;
@@ -131,7 +120,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
       const totalHits = alignedRows.reduce((acc, r) => acc + r.total, 0);
       const totalDocs = alignedRows.reduce((acc, r) => acc + r.docs, 0);
-      const overallDispersion = totalHits > 0 ? totalDocs / totalHits : 0;
       const overallConcentration = totalDocs > 0 ? totalHits / totalDocs : 0;
 
       return {
@@ -140,7 +128,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         values,
         totalHits,
         totalDocs,
-        overallDispersion,
         overallConcentration,
       };
     });
@@ -166,7 +153,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         `${s.query}_total`,
         `${s.query}_docs`,
         `${s.query}_perMillion`,
-        `${s.query}_dispersion_docs_per_hit`,
+        `${s.query}_docShare_pct`,
         `${s.query}_hits_per_doc`
       );
       if (computedSeries.length > 1) {
@@ -183,9 +170,10 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       );
       computedSeries.forEach((s) => {
         const r = s.alignedRows[idx];
-        const disp = r.total > 0 ? Number((r.docs / r.total).toFixed(4)) : 0;
+        const docShare =
+          r.books > 0 ? Number(((r.docs / r.books) * 100).toFixed(2)) : 0;
         const conc = r.docs > 0 ? Number((r.total / r.docs).toFixed(2)) : 0;
-        rowCells.push(r.total, r.docs, r.perMillion, disp, conc);
+        rowCells.push(r.total, r.docs, r.perMillion, docShare, conc);
         if (computedSeries.length > 1) {
           const cohortPct =
             yearTotalHits > 0
@@ -243,7 +231,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
   const maxVal = useMemo(() => {
     if (metric === 'cohort') return 100;
-    if (metric === 'dispersion') return 1;
     let m = 0.0001;
     for (const s of computedSeries) {
       for (const v of s.values) {
@@ -267,7 +254,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const formatMetric = (v: number) => {
     if (metric === 'total') return Math.round(v).toLocaleString('nb-NO');
     if (metric === 'docShare' || metric === 'cohort') return `${v.toFixed(1)} %`;
-    if (metric === 'dispersion') return v.toFixed(3);
     if (metric === 'concentration') return `${v.toFixed(2)} treff/bok`;
     return v.toLocaleString('nb-NO', {
       minimumFractionDigits: 2,
@@ -308,13 +294,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             <span className="radio-item">
               <input
                 type="radio"
-                id={`${metricGroupName}-disp`}
+                id={`${metricGroupName}-doc`}
                 name={metricGroupName}
-                checked={metric === 'dispersion'}
-                onChange={() => setMetric('dispersion')}
+                checked={metric === 'docShare'}
+                onChange={() => setMetric('docShare')}
               />
-              <label htmlFor={`${metricGroupName}-disp`}>
-                Dispersjon (bøker/treff)
+              <label htmlFor={`${metricGroupName}-doc`}>
+                Dekning (andel bøker %)
               </label>
             </span>
 
@@ -327,19 +313,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 onChange={() => setMetric('concentration')}
               />
               <label htmlFor={`${metricGroupName}-conc`}>
-                Tetthet (treff/bok)
+                Intensitet (treff/bok)
               </label>
-            </span>
-
-            <span className="radio-item">
-              <input
-                type="radio"
-                id={`${metricGroupName}-doc`}
-                name={metricGroupName}
-                checked={metric === 'docShare'}
-                onChange={() => setMetric('docShare')}
-              />
-              <label htmlFor={`${metricGroupName}-doc`}>Andel bøker (%)</label>
             </span>
 
             <span className="radio-item">
@@ -413,8 +388,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             </strong>
             <span className="muted">
               {s.totalHits.toLocaleString('nb-NO')} treff ·{' '}
-              {s.totalDocs.toLocaleString('nb-NO')} bøker · disp{' '}
-              {s.overallDispersion.toFixed(2)} ({s.overallConcentration.toFixed(1)}/bok)
+              {s.totalDocs.toLocaleString('nb-NO')} bøker (
+              {s.overallConcentration.toFixed(1)} treff/bok)
             </span>
             <span className="speed-pill">{s.clientMs} ms</span>
           </div>
@@ -580,10 +555,10 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 </div>
               ) : (
                 <span>
-                  {metric === 'dispersion'
-                    ? 'Dispersjon (bøker / treff ∈ [0, 1]): 1,0 betyr at hvert treff står i en ny bok (jevnt spredt), lavt tall betyr at treffene klumper seg i få bøker.'
-                    : metric === 'concentration'
-                    ? 'Tetthet (treff / bøker med treff): gjennomsnittlig antall forekomster per bok der uttrykket forekommer.'
+                  {metric === 'concentration'
+                    ? 'Intensitet (treff / bøker med treff): gjennomsnittlig antall forekomster per bok der uttrykket forekommer.'
+                    : metric === 'docShare'
+                    ? 'Dekning (bøker med treff / bøker i korpuset): prosentandel av bøkene hvert år som inneholder uttrykket.'
                     : metric === 'cohort'
                     ? 'Kohort (%): hver kurves relative andel av kurvegruppens samlede frekvens hvert år (summerer til 100 %).'
                     : 'Hold pekeren over grafen for verdier per år.'}
