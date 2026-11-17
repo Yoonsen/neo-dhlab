@@ -26,12 +26,12 @@ type MetricType =
   | 'total';
 
 export const SERIES_COLORS = [
-  '#0b57d0',
-  '#d93025',
-  '#188038',
-  '#e37400',
-  '#9334e6',
-  '#007b83',
+  '#4d2857', // NB Plomme / Aubergine
+  '#c0392b', // Varm karminrød
+  '#1f6f78', // Dyp petrol
+  '#c86d25', // Oker / rav
+  '#2e6f40', // Skoggrønn
+  '#5b4b8a', // Dyp fiolett
 ];
 
 export const TrendChart: React.FC<TrendChartProps> = ({

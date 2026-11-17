@@ -21,6 +21,19 @@ type TabId = 'overview' | 'concordance' | 'trends';
 
 const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
 const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
+const THEME_VOLUME_KEY = 'neo_dhlab_theme_volume_v1';
+
+type ThemeVolume = 'calm' | 'peach' | 'dark';
+
+function loadThemeVolume(): ThemeVolume {
+  try {
+    const val = localStorage.getItem(THEME_VOLUME_KEY);
+    if (val === 'calm' || val === 'peach' || val === 'dark') return val;
+  } catch {
+    // ignore storage errors
+  }
+  return 'calm';
+}
 
 interface SavedCorpusEntry {
   id: string;
@@ -76,6 +89,16 @@ export const App: React.FC = () => {
   const [baseUrl] = useState<string>(DEFAULT_BASE_URL);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthMs, setHealthMs] = useState<number | null>(null);
+  const [themeVolume, setThemeVolume] = useState<ThemeVolume>(loadThemeVolume);
+
+  const handleThemeChange = (next: ThemeVolume) => {
+    setThemeVolume(next);
+    try {
+      localStorage.setItem(THEME_VOLUME_KEY, next);
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   // Corpus context state
   const [corpus, setCorpus] = useState<ActiveCorpus>({
@@ -444,19 +467,57 @@ export const App: React.FC = () => {
   );
 
   return (
-    <div className="app-shell">
-      <header className="compact-header">
-        <div className="brand-group">
-          <span className="brand-badge">ft_bok</span>
-          <h1>Korpusmotor</h1>
+    <div className="nb-page" data-volume={themeVolume}>
+      <header className="nb-header">
+        <div className="nb-header__wrapper">
+          <a
+            href="https://www.nb.no/"
+            target="_blank"
+            rel="noreferrer"
+            className="nb-brand-link"
+            aria-label="Nasjonalbiblioteket"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 17 24"
+              height="22"
+              width="16"
+              aria-hidden="true"
+              className="nb-brand-logo"
+            >
+              <path d="M1.4 7.8c.6 0 1.1-.5 1.1-1.1s-.5-1-1.1-1C.8 5.7.3 6.2.3 6.8c0 .5.5 1 1.1 1zM12.2 23.7c.6 0 1.1-.5 1.1-1.1 0-.6-.5-1.1-1.1-1.1-.6 0-1.1.5-1.1 1.1 0 .7.5 1.1 1.1 1.1zM4.1.3v19.8h12.6V.3H4.1zm2.7 7.5c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1c.6 0 1.1.5 1.1 1.1s-.5 1.1-1.1 1.1zm5.3 10.6c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1zm0-5.3c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1zm0-5.3c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1z" />
+            </svg>
+            <span className="nb-brand-main">Nasjonalbiblioteket</span>
+            <span className="nb-brand-sub">DHLAB · Korpusmotor</span>
+          </a>
+
+          <div className="header-right">
+            <select
+              aria-label="Fargevolum (NB stilmanual)"
+              className="volume-select"
+              value={themeVolume}
+              onChange={(e) =>
+                handleThemeChange(e.target.value as ThemeVolume)
+              }
+            >
+              <option value="calm">Profil: Rolig (N-gram)</option>
+              <option value="peach">Profil: NB Fersken 20</option>
+              <option value="dark">Profil: NB Aubergine (Mørk)</option>
+            </select>
+
+            <span
+              className={`status-pill ${
+                health?.status === 'ok' ? 'status-ok' : 'status-wait'
+              }`}
+            >
+              <span className="status-dot" aria-hidden="true" />
+              {health?.status === 'ok' ? `${healthMs} ms` : 'API'}
+            </span>
+          </div>
         </div>
-        <span
-          className={`status-pill ${health?.status === 'ok' ? 'status-ok' : 'status-wait'}`}
-        >
-          <span className="status-dot" aria-hidden="true" />
-          {health?.status === 'ok' ? `API (${healthMs} ms)` : 'API'}
-        </span>
       </header>
+
+      <div className="app-shell">
 
       {/* KORPUS-KONTEKST */}
       <section className="context-bar-card" aria-label="Korpus (kontekst for søket)">
@@ -818,6 +879,7 @@ export const App: React.FC = () => {
           )}
         </div>
       </main>
+      </div>
     </div>
   );
 };
