@@ -5,6 +5,7 @@ import {
   buildNearQueryPayload,
   fetchNearCount,
   parseSearchQuery,
+  splitTopLevelAnd,
 } from '../api';
 import { parseCorpusFile } from '../excelCorpusParser';
 
@@ -178,63 +179,72 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         totalMs += clientMs;
       }
 
-      // 3. Hvis brukeren har skrevet et søkeuttrykk (near_query eller enkeltord) for å avgrense korpuset
+      // 3. Hvis brukeren har skrevet søkeuttrykk (f.eks. NEAR(a b, 5) AND NEAR(c d, 10)) for å avgrense korpuset
       const cleanText = textFilter.trim();
       if (cleanText) {
-        const parsedText = parseSearchQuery(cleanText, textWindow, true);
-        const tempCorpus: ActiveCorpus = metaCorpusToken
-          ? {
-              enabled: true,
-              label: '',
-              corpusToken: metaCorpusToken,
-              filterIds: [],
-              size: metaSize,
-              sourceDescription: '',
-            }
-          : {
-              enabled: false,
-              label: '',
-              corpusToken: null,
-              filterIds: [],
-              size: 0,
-              sourceDescription: '',
-            };
+        const clauses = splitTopLevelAnd(cleanText);
+        let curToken = metaCorpusToken;
+        let curSize = metaSize;
+        let lastSampled = false;
+        let lastTotalDocs = 0;
 
-        const nearPayload = buildNearQueryPayload(parsedText, tempCorpus, {
-          returnCorpus: true,
-          maxCorpusDocs: 100000,
-        });
-        const { data: nearData, clientMs: nearMs } = await fetchNearCount(
-          baseUrl,
-          nearPayload
-        );
-        totalMs += nearMs;
+        for (const clauseText of clauses) {
+          const parsedText = parseSearchQuery(clauseText, textWindow, true);
+          const tempCorpus: ActiveCorpus = curToken
+            ? {
+                enabled: true,
+                label: '',
+                corpusToken: curToken,
+                filterIds: [],
+                size: curSize,
+                sourceDescription: '',
+              }
+            : {
+                enabled: false,
+                label: '',
+                corpusToken: null,
+                filterIds: [],
+                size: 0,
+                sourceDescription: '',
+              };
 
-        if (nearData.corpusToken) {
-          const finalSize = nearData.corpusSize ?? nearData.docs;
-          const sampledNote = nearData.sampled
-            ? ` (utvalg av ${nearData.docs.toLocaleString('nb-NO')})`
-            : '';
-          labels.push(`tekst:«${cleanText}»`);
-          onCorpusChange({
-            enabled: true,
-            label: labels.join(' · '),
-            corpusToken: nearData.corpusToken,
-            filterIds: [],
-            size: finalSize,
-            sourceDescription: `Roaring fra søk${sampledNote} (${totalMs} ms)`,
+          const nearPayload = buildNearQueryPayload(parsedText, tempCorpus, {
+            returnCorpus: true,
+            maxCorpusDocs: 100000,
           });
-          onClose();
-          return;
-        } else {
-          throw new Error(
-            `Søket «${cleanText}» treffer ${nearData.docs.toLocaleString(
-              'nb-NO'
-            )} bøker (${nearData.total.toLocaleString(
-              'nb-NO'
-            )} forekomster på ${nearMs} ms), men serveren på 8096 returnerer ennå ikke corpusToken fra /near_query.`
+          const { data: nearData, clientMs: nearMs } = await fetchNearCount(
+            baseUrl,
+            nearPayload
           );
+          totalMs += nearMs;
+
+          if (!nearData.corpusToken) {
+            throw new Error(
+              `Søket «${clauseText}» treffer ${nearData.docs.toLocaleString(
+                'nb-NO'
+              )} bøker, men serveren returnerte ikke corpusToken.`
+            );
+          }
+          curToken = nearData.corpusToken;
+          curSize = nearData.corpusSize ?? nearData.docs;
+          lastTotalDocs = nearData.docs;
+          lastSampled = Boolean(nearData.sampled);
         }
+
+        const sampledNote = lastSampled
+          ? ` (utvalg av ${lastTotalDocs.toLocaleString('nb-NO')})`
+          : '';
+        labels.push(`tekst:«${cleanText}»`);
+        onCorpusChange({
+          enabled: true,
+          label: customName.trim() || labels.join(' · '),
+          corpusToken: curToken,
+          filterIds: [],
+          size: curSize,
+          sourceDescription: `Roaring fra søk${sampledNote} (${totalMs} ms)`,
+        });
+        onClose();
+        return;
       }
 
       if (!metaCorpusToken) {

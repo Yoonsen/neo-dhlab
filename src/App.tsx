@@ -11,6 +11,7 @@ import {
   HealthResponse,
   ParsedQuery,
   parseMultiSearchQuery,
+  resolveEffectiveCorpus,
 } from './api';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
@@ -60,11 +61,12 @@ const DEFAULT_RECENT_QUERIES: string[] = [
   'demokrati, diktatur',
   'demokrati diktatur',
   'demokrati ^diktatur',
+  'NEAR(skib storm, 10)',
+  '(skib OR skip) storm',
+  '"demokrati diktatur"~10',
   '"i forhold til"',
   'krig fred Europa',
   'sjarken og, ^sjarken og',
-  'og i',
-  'og',
 ];
 
 function loadRecentQueries(): string[] {
@@ -178,12 +180,25 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const parsedList = useMemo(
-    () =>
-      parseMultiSearchQuery(queryText, windowSize, symmetric).filter(
-        (p) => p.terms.length > 0
-      ),
+  const allParsedList = useMemo(
+    () => parseMultiSearchQuery(queryText, windowSize, symmetric),
     [queryText, windowSize, symmetric]
+  );
+
+  const anyParseError = useMemo(
+    () => allParsedList.find((p) => p.parseError)?.parseError ?? null,
+    [allParsedList]
+  );
+
+  const activeDialect = useMemo(() => {
+    if (allParsedList.some((p) => p.syntaxDialect === 'fts5')) return 'FTS5';
+    if (allParsedList.some((p) => p.syntaxDialect === 'elastic')) return 'Elastic';
+    return null;
+  }, [allParsedList]);
+
+  const parsedList = useMemo(
+    () => allParsedList.filter((p) => p.terms.length > 0 && !p.parseError),
+    [allParsedList]
   );
 
   const activeConcParsed = useMemo(() => {
@@ -219,13 +234,25 @@ export const App: React.FC = () => {
         for (let i = 0; i < list.length; i++) {
           if (signal.aborted) return;
           const itemParsed = list[i];
-          const payload = buildNearQueryPayload(itemParsed, customCorpus);
+          const { corpus: effCorpus, extraMs } = await resolveEffectiveCorpus(
+            baseUrl,
+            itemParsed,
+            customCorpus,
+            signal
+          );
+          if (signal.aborted) return;
+          const payload = buildNearQueryPayload(itemParsed, effCorpus);
           const { data, clientMs } = await fetchNearCount(baseUrl, payload, signal);
           if (signal.aborted) return;
 
           setCountItems((prev) => [
             ...prev,
-            { parsed: itemParsed, result: data, clientMs, payload },
+            {
+              parsed: itemParsed,
+              result: data,
+              clientMs: clientMs + extraMs,
+              payload,
+            },
           ]);
           setPendingCountQueries(list.slice(i + 1).map((p) => p.raw));
         }
@@ -261,7 +288,14 @@ export const App: React.FC = () => {
         for (let i = 0; i < list.length; i++) {
           if (signal.aborted) return;
           const itemParsed = list[i];
-          const payload = buildNearQueryPayload(itemParsed, customCorpus, {
+          const { corpus: effCorpus, extraMs } = await resolveEffectiveCorpus(
+            baseUrl,
+            itemParsed,
+            customCorpus,
+            signal
+          );
+          if (signal.aborted) return;
+          const payload = buildNearQueryPayload(itemParsed, effCorpus, {
             startYear: sYear,
             endYear: eYear,
           });
@@ -276,7 +310,7 @@ export const App: React.FC = () => {
               color,
               rows: data.rows,
               countMode: data.countMode,
-              clientMs,
+              clientMs: clientMs + extraMs,
               serverMs: data.responseMs,
             },
           ]);
@@ -307,15 +341,21 @@ export const App: React.FC = () => {
       setConcLoading(true);
       setConcError(null);
       try {
-        const { data, clientMs } = await fetchConcordancePublic(
+        const { corpus: effCorpus, extraMs } = await resolveEffectiveCorpus(
           baseUrl,
           customParsed,
           customCorpus,
+          signal
+        );
+        const { data, clientMs } = await fetchConcordancePublic(
+          baseUrl,
+          customParsed,
+          effCorpus,
           opts,
           signal
         );
         setConcData(data);
-        setConcMs(clientMs);
+        setConcMs(clientMs + extraMs);
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         setConcError(err instanceof Error ? err.message : String(err));
@@ -462,9 +502,9 @@ export const App: React.FC = () => {
 
   const isBusy = countLoading || trendLoading || concLoading;
 
-  const anyMultiWord = parsedList.some(
-    (p) => p.matchMode !== 'sequence' && p.terms.length >= 2
-  );
+  const anyMultiWord =
+    !activeDialect &&
+    parsedList.some((p) => p.matchMode !== 'sequence' && p.terms.length >= 2);
 
   return (
     <div className="nb-page" data-volume={themeVolume}>
@@ -744,11 +784,21 @@ export const App: React.FC = () => {
                   <button
                     type="submit"
                     className="btn-submit-search"
-                    disabled={isBusy || parsedList.length === 0}
+                    disabled={isBusy || parsedList.length === 0 || Boolean(anyParseError)}
                   >
                     {isBusy ? 'Søker…' : 'Søk'}
                   </button>
                 </div>
+
+                {anyParseError && (
+                  <div
+                    role="alert"
+                    className="error-banner"
+                    style={{ marginBlockStart: '0.5rem', fontSize: '0.875rem' }}
+                  >
+                    {anyParseError}
+                  </div>
+                )}
 
                 {/* Dropdown med siste søk fra localStorage */}
                 {historyOpen && (
@@ -779,7 +829,14 @@ export const App: React.FC = () => {
 
               <div className="search-options-row">
                 <span className="muted" style={{ fontSize: '0.85rem' }}>
-                  {parsedList.length > 1
+                  {activeDialect && (
+                    <span className="badge-mode" style={{ marginInlineEnd: '0.45rem' }}>
+                      {activeDialect}
+                    </span>
+                  )}
+                  {anyParseError
+                    ? 'Rett syntaksfeilen over for å kjøre søket'
+                    : parsedList.length > 1
                     ? `${parsedList.length} uttrykk (komma-separert)`
                     : parsedList[0]?.predictedModeLabel}
                 </span>
