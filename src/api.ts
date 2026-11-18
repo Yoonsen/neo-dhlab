@@ -181,9 +181,9 @@ export function parseMultiSearchQuery(
       'Syntaksfeil: Kan ikke blande FTS5-syntaks (NEAR(...)) og Elastic-syntaks ("..."~n) i samme søk.';
     return list.map((p) => ({ ...p, parseError: p.parseError || msg }));
   }
-  if ((hasFts5 || hasElastic) && hasAnchor) {
+  if (hasElastic && hasAnchor) {
     const msg =
-      'Syntaksfeil: Kan ikke blande FTS5/Elastic-syntaks med ankermarkør (^ord) i samme søk.';
+      'Syntaksfeil: Kan ikke blande Elastic-syntaks med ankermarkør (^ord) i samme søk.';
     return list.map((p) => ({ ...p, parseError: p.parseError || msg }));
   }
   return list;
@@ -256,19 +256,12 @@ function detectAndValidateDialect(expr: string): {
   const isFts5 = hasFts5Near || (hasBoolOps && !hasElasticTilde && !hasElasticNearSlash);
   const isElastic = hasElasticTilde || hasElasticNearSlash;
 
-  // 4. Forby blanding av dialekter
+  // 4. Forby blanding av FTS5 og Elastic (men tillat ^anker som utvidelse i FTS5!)
   if (hasFts5Near && isElastic) {
     return {
       dialect: 'fts5',
       error:
         'Syntaksfeil: Kan ikke blande FTS5 (NEAR(...)) og Elastic-syntaks ("..."~n eller NEAR/n) i samme søk.',
-    };
-  }
-  if (hasFts5Near && hasNativeAnchor) {
-    return {
-      dialect: 'fts5',
-      error:
-        'Syntaksfeil: Kan ikke blande FTS5 NEAR(...) med ankermarkør (^ord).',
     };
   }
   if (isElastic && hasNativeAnchor) {
@@ -301,9 +294,9 @@ function detectAndValidateDialect(expr: string): {
     };
   }
 
-  // 6. Valider FTS5 NEAR(...)
+  // 6. Valider FTS5 NEAR(...) (inkl. utvidet syntaks med ^anker og valgfri symmetri: +10 eller 3. argument)
   if (hasFts5Near) {
-    const nearMatches = Array.from(s.matchAll(/\bNEAR\s*\(([^()]*)\)/g));
+    const nearMatches = Array.from(s.matchAll(/\^?\bNEAR\s*\(([^()]*)\)/g));
     if (nearMatches.length === 0) {
       return {
         dialect: 'fts5',
@@ -313,18 +306,19 @@ function detectAndValidateDialect(expr: string): {
     for (const m of nearMatches) {
       let inner = m[1].trim();
       const commaParts = inner.split(',');
-      if (commaParts.length > 2) {
+      if (commaParts.length > 3) {
         return {
           dialect: 'fts5',
-          error: 'Syntaksfeil i FTS5 NEAR(...): kun ett komma før avstandstallet, f.eks. NEAR(a b, 10).',
+          error:
+            'Syntaksfeil i FTS5 NEAR(...): bruk NEAR(a b, 10) eller NEAR(a b, 10, false/asym).',
         };
       }
-      if (commaParts.length === 2) {
+      if (commaParts.length >= 2) {
         const winStr = commaParts[1].trim();
-        if (!/^\d+$/.test(winStr)) {
+        if (!/^\+?\d+$/.test(winStr)) {
           return {
             dialect: 'fts5',
-            error: `Syntaksfeil i FTS5 NEAR(...): avstanden «${winStr}» må være et heltall (1–50).`,
+            error: `Syntaksfeil i FTS5 NEAR(...): avstanden «${winStr}» må være et heltall (1–50, evt. +10 for asymmetrisk).`,
           };
         }
         const w = parseInt(winStr, 10);
@@ -333,6 +327,26 @@ function detectAndValidateDialect(expr: string): {
             dialect: 'fts5',
             error: `FTS5 NEAR-avstand (${w}) må være mellom 1 og 50.`,
           };
+        }
+        if (commaParts.length === 3) {
+          const symArg = commaParts[2].trim().toLowerCase();
+          if (
+            ![
+              'true',
+              'false',
+              'sym',
+              'asym',
+              'ordered',
+              '->',
+              '0',
+              '1',
+            ].includes(symArg)
+          ) {
+            return {
+              dialect: 'fts5',
+              error: `Ukjent symmetri-argument «${commaParts[2].trim()}» i NEAR(...): bruk false/asym/-> for ordnet eller true/sym for symmetrisk.`,
+            };
+          }
         }
         inner = commaParts[0].trim();
       }
@@ -455,26 +469,49 @@ export function splitTopLevelAnd(expr: string): string[] {
  */
 function parseCnfGroups(
   expr: string,
-  defaultWindow: number
+  defaultWindow: number,
+  defaultSymmetric: boolean
 ): {
   groups: string[][];
   effectiveWindow: number;
+  effectiveSymmetric: boolean;
   usedExplicitSyntax: boolean;
+  clauseAnchored: boolean;
 } {
   let working = expr.trim();
   let effectiveWindow = defaultWindow;
+  let effectiveSymmetric = defaultSymmetric;
   let usedExplicitSyntax = false;
+  let clauseAnchored = false;
+
+  if (working.startsWith('^NEAR') && /^(\^NEAR)\s*\(/.test(working)) {
+    clauseAnchored = true;
+    working = working.slice(1).trim();
+  }
 
   // 1. Sjekk om hele uttrykket er pakket i FTS5 NEAR(...)
   const nearFuncMatch = working.match(/^NEAR\s*\(([\s\S]+)\)$/);
   if (nearFuncMatch) {
     usedExplicitSyntax = true;
     let inner = nearFuncMatch[1].trim();
-    // Sjekk om det slutter med ", <tall>" på toppnivå
-    const trailingWin = inner.match(/^(.*),\s*(\d+)\s*$/);
-    if (trailingWin) {
-      inner = trailingWin[1].trim();
-      effectiveWindow = clampWindow(parseInt(trailingWin[2], 10));
+    const parts = inner.split(',');
+    if (parts.length >= 2) {
+      const winRaw = parts[1].trim();
+      if (/^\+?\d+$/.test(winRaw)) {
+        effectiveWindow = clampWindow(parseInt(winRaw, 10));
+        if (winRaw.startsWith('+')) {
+          effectiveSymmetric = false;
+        }
+      }
+      if (parts.length === 3) {
+        const symArg = parts[2].trim().toLowerCase();
+        if (['false', 'asym', 'ordered', '->', '0'].includes(symArg)) {
+          effectiveSymmetric = false;
+        } else if (['true', 'sym', '1'].includes(symArg)) {
+          effectiveSymmetric = true;
+        }
+      }
+      inner = parts[0].trim();
     }
     working = inner;
   }
@@ -633,7 +670,13 @@ function parseCnfGroups(
     effectiveWindow = 50;
   }
 
-  return { groups, effectiveWindow, usedExplicitSyntax };
+  return {
+    groups,
+    effectiveWindow,
+    effectiveSymmetric,
+    usedExplicitSyntax,
+    clauseAnchored,
+  };
 }
 
 /**
@@ -720,8 +763,17 @@ export function parseSearchQuery(
         parseError: mixErr,
       };
     }
-    const primary = subQueries[subQueries.length - 1];
-    const filters = subQueries.slice(0, -1);
+    // Hvis ett av leddene i AND-kjeden er merket med ^ (f.eks. ^NEAR(a b, 5) AND NEAR(c d, 10) eller NEAR(a ^b, 5) AND ...),
+    // blir det forankrede leddet hoveduttrykket (som telles / vises i konkordans), og de øvrige blir korpusfilter!
+    let primaryIdx = subQueries.findIndex(
+      (sq, idx) =>
+        andParts[idx].trim().startsWith('^') || sq.anchorWord !== null
+    );
+    if (primaryIdx === -1) {
+      primaryIdx = subQueries.length - 1;
+    }
+    const primary = subQueries[primaryIdx];
+    const filters = subQueries.filter((_, idx) => idx !== primaryIdx);
     return {
       ...primary,
       raw: trimmed,
@@ -782,10 +834,12 @@ export function parseSearchQuery(
   }
 
   // 3. Parse CNF-grupper (håndterer vanlig syntaks, FTS5 NEAR/OR/AND, Elastic og NB N-gram)
-  const { groups, effectiveWindow, usedExplicitSyntax } = parseCnfGroups(
-    trimmed,
-    windowSize
-  );
+  const {
+    groups,
+    effectiveWindow,
+    effectiveSymmetric,
+    usedExplicitSyntax,
+  } = parseCnfGroups(trimmed, windowSize, symmetric);
 
   if (groups.length === 0) {
     return {
@@ -793,7 +847,7 @@ export function parseSearchQuery(
       terms: [],
       matchMode: 'near',
       window: effectiveWindow,
-      symmetric,
+      symmetric: effectiveSymmetric,
       anchorWord: null,
       hasWildcardOrGroup: false,
       hasOrGroup: false,
@@ -827,6 +881,8 @@ export function parseSearchQuery(
     g.length > 1 ? `(${g.join(' | ')})` : g[0].replace(/^\^(?=.+)/, '')
   );
 
+  const symSuffix = !effectiveSymmetric ? ' (ordnet A → B)' : '';
+
   let predictedModeLabel = '';
   if (groups.length === 1) {
     predictedModeLabel = hasOrGroup
@@ -834,19 +890,19 @@ export function parseSearchQuery(
       : `Forekomster av «${groupLabels[0]}» (tf)`;
   } else if (groups.length === 2) {
     if (anchorWord) {
-      predictedModeLabel = `Anker på «${anchorWord}» innenfor ${effectiveWindow} ord`;
+      predictedModeLabel = `Anker på «${anchorWord}» innenfor ${effectiveWindow} ord${symSuffix}`;
     } else {
       predictedModeLabel = `${
         usedExplicitSyntax ? 'FTS5/Nærhet' : 'Par'
-      }: ${groupLabels.join(' · ')} innenfor ${effectiveWindow} ord`;
+      }: ${groupLabels.join(' · ')} innenfor ${effectiveWindow} ord${symSuffix}`;
     }
   } else {
     if (anchorWord) {
       predictedModeLabel = `Anker på «${anchorWord}» med ${
         groups.length - 1
-      } grupper innenfor ${effectiveWindow} ord`;
+      } grupper innenfor ${effectiveWindow} ord${symSuffix}`;
     } else {
-      predictedModeLabel = `Spenn (spans): alle ${groups.length} ledd innenfor ${effectiveWindow} ord`;
+      predictedModeLabel = `Spenn (spans): alle ${groups.length} ledd innenfor ${effectiveWindow} ord${symSuffix}`;
     }
   }
 
@@ -867,7 +923,7 @@ export function parseSearchQuery(
     termGroups: hasWildcardOrGroup ? groups : undefined,
     matchMode: 'near',
     window: effectiveWindow,
-    symmetric,
+    symmetric: effectiveSymmetric,
     anchorWord,
     hasWildcardOrGroup,
     hasOrGroup,

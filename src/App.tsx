@@ -15,6 +15,7 @@ import {
 } from './api';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
+import { HelpDialog } from './components/HelpDialog';
 import { CountSeriesItem, OverviewTab } from './components/OverviewTab';
 import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendChart';
 
@@ -112,6 +113,7 @@ export const App: React.FC = () => {
     sourceDescription: '',
   });
   const [corpusDialogOpen, setCorpusDialogOpen] = useState<boolean>(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState<boolean>(false);
   const [savedCorpora, setSavedCorpora] = useState<SavedCorpusEntry[]>(loadSavedCorpora);
   const [corpusMenuOpen, setCorpusMenuOpen] = useState<boolean>(false);
 
@@ -532,6 +534,32 @@ export const App: React.FC = () => {
           </a>
 
           <div className="header-right">
+            <button
+              type="button"
+              className="info-header-btn"
+              onClick={() => setHelpDialogOpen(true)}
+              aria-label="Om Korpusmotoren og søkesyntaks"
+              title="Om Korpusmotoren og søkesyntaks"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Om / Syntaks</span>
+            </button>
+
             <select
               aria-label="Fargevolum (NB stilmanual)"
               className="volume-select"
@@ -712,6 +740,12 @@ export const App: React.FC = () => {
         corpus={corpus}
         onCorpusChange={handleCorpusUpdate}
         onClose={() => setCorpusDialogOpen(false)}
+      />
+
+      <HelpDialog
+        open={helpDialogOpen}
+        onClose={() => setHelpDialogOpen(false)}
+        onTryQuery={handleSelectQuery}
       />
 
       {/* HOVEDKORT: OPSJONER ØVERST -> SØKEFELT UNDER -> RESULTAT */}
