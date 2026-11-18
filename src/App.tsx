@@ -18,12 +18,14 @@ import { CorpusBuilder } from './components/CorpusBuilder';
 import { HelpDialog } from './components/HelpDialog';
 import { CountSeriesItem, OverviewTab } from './components/OverviewTab';
 import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendChart';
+import { TRANSLATIONS, UI_LANG_OPTIONS, UiLang } from './i18n';
 
 type TabId = 'overview' | 'concordance' | 'trends';
 
 const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
 const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
 const THEME_VOLUME_KEY = 'neo_dhlab_theme_volume_v1';
+const UI_LANG_KEY = 'neo_dhlab_ui_lang_v1';
 
 type ThemeVolume = 'calm' | 'peach' | 'dark';
 
@@ -35,6 +37,16 @@ function loadThemeVolume(): ThemeVolume {
     // ignore storage errors
   }
   return 'calm';
+}
+
+function loadUiLang(): UiLang {
+  try {
+    const val = localStorage.getItem(UI_LANG_KEY) as UiLang | null;
+    if (val && val in TRANSLATIONS) return val;
+  } catch {
+    // ignore storage errors
+  }
+  return 'no';
 }
 
 interface SavedCorpusEntry {
@@ -93,11 +105,23 @@ export const App: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthMs, setHealthMs] = useState<number | null>(null);
   const [themeVolume, setThemeVolume] = useState<ThemeVolume>(loadThemeVolume);
+  const [uiLang, setUiLang] = useState<UiLang>(loadUiLang);
+  const t = TRANSLATIONS[uiLang];
 
   const handleThemeChange = (next: ThemeVolume) => {
     setThemeVolume(next);
     try {
       localStorage.setItem(THEME_VOLUME_KEY, next);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleLangChange = (next: UiLang) => {
+    setUiLang(next);
+    document.documentElement.lang = next === 'no' ? 'nb' : next;
+    try {
+      localStorage.setItem(UI_LANG_KEY, next);
     } catch {
       // ignore storage errors
     }
@@ -482,9 +506,9 @@ export const App: React.FC = () => {
   });
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: 'Telling' },
-    { id: 'concordance', label: 'Konkordans' },
-    { id: 'trends', label: 'Trender' },
+    { id: 'overview', label: t.tabCounts },
+    { id: 'concordance', label: t.tabConcordance },
+    { id: 'trends', label: t.tabTrends },
   ];
 
   const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {
@@ -530,22 +554,35 @@ export const App: React.FC = () => {
               <path d="M1.4 7.8c.6 0 1.1-.5 1.1-1.1s-.5-1-1.1-1C.8 5.7.3 6.2.3 6.8c0 .5.5 1 1.1 1zM12.2 23.7c.6 0 1.1-.5 1.1-1.1 0-.6-.5-1.1-1.1-1.1-.6 0-1.1.5-1.1 1.1 0 .7.5 1.1 1.1 1.1zM4.1.3v19.8h12.6V.3H4.1zm2.7 7.5c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1c.6 0 1.1.5 1.1 1.1s-.5 1.1-1.1 1.1zm5.3 10.6c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1zm0-5.3c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1zm0-5.3c-.6 0-1.1-.5-1.1-1.1s.5-1.1 1.1-1.1 1.1.5 1.1 1.1-.5 1.1-1.1 1.1z" />
             </svg>
             <span className="nb-brand-main">Nasjonalbiblioteket</span>
-            <span className="nb-brand-sub">DHLAB · Korpusmotor</span>
+            <span className="nb-brand-sub">{t.brandSub}</span>
           </a>
 
           <div className="header-right">
+            <select
+              aria-label="Fargevolum (NB stilmanual)"
+              className="volume-select"
+              value={themeVolume}
+              onChange={(e) =>
+                handleThemeChange(e.target.value as ThemeVolume)
+              }
+            >
+              <option value="calm">{t.profileCalm}</option>
+              <option value="peach">{t.profilePeach}</option>
+              <option value="dark">{t.profileDark}</option>
+            </select>
+
             <button
               type="button"
               className="info-header-btn"
               onClick={() => setHelpDialogOpen(true)}
-              aria-label="Om Korpusmotoren og søkesyntaks"
-              title="Om Korpusmotoren og søkesyntaks"
+              aria-label={t.helpTitle}
+              title={t.helpTitle}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
-                width="18"
-                height="18"
+                width="17"
+                height="17"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
@@ -557,21 +594,40 @@ export const App: React.FC = () => {
                 <line x1="12" y1="16" x2="12" y2="12" />
                 <line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
-              <span>Om / Syntaks</span>
+              <span>{t.helpBtn}</span>
             </button>
 
-            <select
-              aria-label="Fargevolum (NB stilmanual)"
-              className="volume-select"
-              value={themeVolume}
-              onChange={(e) =>
-                handleThemeChange(e.target.value as ThemeVolume)
-              }
-            >
-              <option value="calm">Profil: Rolig (N-gram)</option>
-              <option value="peach">Profil: NB Fersken 20</option>
-              <option value="dark">Profil: NB Aubergine (Mørk)</option>
-            </select>
+            <div className="lang-globe-wrap" title={t.langLabel}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="globe-icon"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              <select
+                aria-label={t.langLabel}
+                className="lang-select"
+                value={uiLang}
+                onChange={(e) => handleLangChange(e.target.value as UiLang)}
+              >
+                {UI_LANG_OPTIONS.map((l) => (
+                  <option key={l.code} value={l.code} title={l.label}>
+                    {l.short}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <span
               className={`status-pill ${
@@ -588,22 +644,22 @@ export const App: React.FC = () => {
       <div className="app-shell">
 
       {/* KORPUS-KONTEKST */}
-      <section className="context-bar-card" aria-label="Korpus (kontekst for søket)">
+      <section className="context-bar-card" aria-label={t.corpusBadge}>
         <div className="context-bar-row">
           <div className="context-step-info">
-            <span className="step-badge">Korpus</span>
+            <span className="step-badge">{t.corpusBadge}</span>
             {corpus.enabled && corpus.size > 0 ? (
               <div className="corpus-active-summary">
                 <strong>{corpus.label}</strong>
                 <span className="badge-accent">
-                  {corpus.size.toLocaleString('nb-NO')} bøker
+                  {corpus.size.toLocaleString('nb-NO')} {t.booksUnit}
                 </span>
                 <span className="muted">{corpus.sourceDescription}</span>
               </div>
             ) : (
               <div className="corpus-active-summary">
-                <strong>Hele boksamlingen</strong>
-                <span className="muted">(713 913 bøker · 38,5 mrd. ord)</span>
+                <strong>{t.wholeCollection}</strong>
+                <span className="muted">(713 913 {t.booksUnit} · {t.billionWords})</span>
               </div>
             )}
           </div>
@@ -616,7 +672,7 @@ export const App: React.FC = () => {
                 aria-expanded={corpusMenuOpen}
                 onClick={() => setCorpusMenuOpen((v) => !v)}
               >
-                Mine korpus ({savedCorpora.length}) ▾
+                {t.myCorpora} ({savedCorpora.length}) ▾
               </button>
             )}
 
@@ -628,7 +684,7 @@ export const App: React.FC = () => {
                 setCorpusDialogOpen(true);
               }}
             >
-              {corpus.size > 0 ? 'Nytt / endre korpus…' : 'Definer korpus…'}
+              {corpus.size > 0 ? t.editCorpus : t.defineCorpus}
             </button>
 
             {corpus.size > 0 && (
@@ -638,7 +694,7 @@ export const App: React.FC = () => {
                 onClick={() =>
                   handleCorpusUpdate({
                     enabled: false,
-                    label: 'Hele samlingen',
+                    label: t.resetCorpus,
                     corpusToken: null,
                     filterIds: [],
                     size: 0,
@@ -646,7 +702,7 @@ export const App: React.FC = () => {
                   })
                 }
               >
-                Hele samlingen
+                {t.resetCorpus}
               </button>
             )}
 
@@ -659,16 +715,16 @@ export const App: React.FC = () => {
                   inlineSize: 'min(420px, 90vw)',
                 }}
                 role="listbox"
-                aria-label="Mine lagrede korpus"
+                aria-label={t.myCorpora}
               >
                 <div className="history-menu-header">
-                  <span>Mine korpus (lagret i nettleseren)</span>
+                  <span>{t.myCorpora}</span>
                   <button
                     type="button"
                     className="btn-tiny"
                     onClick={() => setCorpusMenuOpen(false)}
                   >
-                    Lukk
+                    {t.closeBtn}
                   </button>
                 </div>
                 <button
@@ -677,7 +733,7 @@ export const App: React.FC = () => {
                   onClick={() =>
                     handleCorpusUpdate({
                       enabled: false,
-                      label: 'Hele samlingen',
+                      label: t.resetCorpus,
                       corpusToken: null,
                       filterIds: [],
                       size: 0,
@@ -685,8 +741,8 @@ export const App: React.FC = () => {
                     })
                   }
                 >
-                  <strong>Hele boksamlingen</strong>{' '}
-                  <span className="muted">(713 913 bøker)</span>
+                  <strong>{t.wholeCollection}</strong>{' '}
+                  <span className="muted">(713 913 {t.booksUnit})</span>
                 </button>
                 {savedCorpora.map((sc) => (
                   <div
@@ -715,7 +771,7 @@ export const App: React.FC = () => {
                     >
                       <strong>{sc.label}</strong>{' '}
                       <span className="muted">
-                        ({sc.size.toLocaleString('nb-NO')} bøker)
+                        ({sc.size.toLocaleString('nb-NO')} {t.booksUnit})
                       </span>
                     </button>
                     <button
@@ -738,12 +794,14 @@ export const App: React.FC = () => {
         open={corpusDialogOpen}
         baseUrl={baseUrl}
         corpus={corpus}
+        t={t}
         onCorpusChange={handleCorpusUpdate}
         onClose={() => setCorpusDialogOpen(false)}
       />
 
       <HelpDialog
         open={helpDialogOpen}
+        t={t}
         onClose={() => setHelpDialogOpen(false)}
         onTryQuery={handleSelectQuery}
       />
@@ -758,26 +816,26 @@ export const App: React.FC = () => {
             className="tablist prominent-tablist"
             {...({ focusgroup: 'tablist nomemory' } as Record<string, string>)}
           >
-            {tabs.map((t, idx) => {
-              const selected = activeTab === t.id;
+            {tabs.map((tabItem, idx) => {
+              const selected = activeTab === tabItem.id;
               return (
                 <button
-                  key={t.id}
+                  key={tabItem.id}
                   ref={(el) => {
-                    tabRefs.current[t.id] = el;
+                    tabRefs.current[tabItem.id] = el;
                   }}
                   type="button"
                   role="tab"
-                  id={`tab-${t.id}`}
+                  id={`tab-${tabItem.id}`}
                   aria-selected={selected}
                   tabIndex={selected ? 0 : -1}
                   {...(selected
                     ? ({ focusgroupstart: '' } as Record<string, string>)
                     : {})}
-                  onClick={() => handleTabSelect(t.id)}
+                  onClick={() => handleTabSelect(tabItem.id)}
                   onKeyDown={(e) => handleTabKeyDown(e, idx)}
                 >
-                  {t.label}
+                  {tabItem.label}
                 </button>
               );
             })}
@@ -797,7 +855,7 @@ export const App: React.FC = () => {
                     type="search"
                     className="omnibox-input"
                     value={queryText}
-                    placeholder='Søk: demokrati, diktatur eller demokrati ^diktatur, "i forhold til"'
+                    placeholder={t.searchPlaceholder}
                     autoCorrect="off"
                     autoCapitalize="none"
                     spellCheck={false}
@@ -808,11 +866,11 @@ export const App: React.FC = () => {
                   <button
                     type="button"
                     className="history-dropdown-btn"
-                    aria-label="Vis siste søk"
+                    aria-label={t.recentSearches}
                     aria-expanded={historyOpen}
                     onClick={() => setHistoryOpen((v) => !v)}
                   >
-                    Siste søk ▾
+                    {t.recentSearches}
                   </button>
 
                   <button
@@ -820,7 +878,7 @@ export const App: React.FC = () => {
                     className="btn-submit-search"
                     disabled={isBusy || parsedList.length === 0 || Boolean(anyParseError)}
                   >
-                    {isBusy ? 'Søker…' : 'Søk'}
+                    {isBusy ? t.searchingBtn : t.searchBtn}
                   </button>
                 </div>
 
@@ -836,15 +894,15 @@ export const App: React.FC = () => {
 
                 {/* Dropdown med siste søk fra localStorage */}
                 {historyOpen && (
-                  <div className="history-menu" role="listbox" aria-label="Siste søk">
+                  <div className="history-menu" role="listbox" aria-label={t.recentSearchesHeader}>
                     <div className="history-menu-header">
-                      <span>Siste søk (lagret i nettleseren)</span>
+                      <span>{t.recentSearchesHeader}</span>
                       <button
                         type="button"
                         className="btn-tiny"
                         onClick={() => setHistoryOpen(false)}
                       >
-                        Lukk
+                        {t.closeBtn}
                       </button>
                     </div>
                     {recentQueries.map((rq) => (
@@ -869,17 +927,17 @@ export const App: React.FC = () => {
                     </span>
                   )}
                   {anyParseError
-                    ? 'Rett syntaksfeilen over for å kjøre søket'
+                    ? t.fixSyntaxHint
                     : parsedList.length > 1
-                    ? `${parsedList.length} uttrykk (komma-separert)`
+                    ? `${parsedList.length} ${t.expressionsCount}`
                     : parsedList[0]?.predictedModeLabel}
                 </span>
 
                 <fieldset className="window-fieldset">
-                  <legend className="visually-hidden">Nærhetsvindu</legend>
+                  <legend className="visually-hidden">{t.windowLabel}</legend>
                   <div className="slider-wrap">
                     <label htmlFor={windowSliderId}>
-                      Vindu: <strong>{windowSize}</strong>
+                      {t.windowLabel}: <strong>{windowSize}</strong>
                     </label>
                     <input
                       id={windowSliderId}
@@ -899,7 +957,7 @@ export const App: React.FC = () => {
                       disabled={!anyMultiWord}
                       onChange={(e) => setSymmetric(e.target.checked)}
                     />
-                    <label htmlFor={symmetricCheckId}>Symmetrisk</label>
+                    <label htmlFor={symmetricCheckId}>{t.symmetricLabel}</label>
                   </div>
                 </fieldset>
               </div>
@@ -916,6 +974,7 @@ export const App: React.FC = () => {
                 corpus={corpus}
                 loading={countLoading}
                 error={countError}
+                t={t}
                 onFetchConcordanceFor={(targetParsed) => {
                   setSelectedConcQuery(targetParsed);
                   setActiveTab('concordance');
@@ -944,6 +1003,7 @@ export const App: React.FC = () => {
                 limit={concOptions.limit}
                 before={concOptions.before}
                 after={concOptions.after}
+                t={t}
                 onOptionsChange={setConcOptions}
                 onFetch={() =>
                   void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
@@ -965,6 +1025,7 @@ export const App: React.FC = () => {
                 seriesList={trendSeries}
                 pendingQueries={pendingTrendQueries}
                 loading={trendLoading}
+                t={t}
               />
             </div>
           )}

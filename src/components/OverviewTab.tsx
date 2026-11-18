@@ -8,6 +8,7 @@ import {
   ParsedQuery,
 } from '../api';
 import { downloadExcelFile } from '../excelExport';
+import { UiStrings } from '../i18n';
 
 export interface CountSeriesItem {
   parsed: ParsedQuery;
@@ -18,6 +19,7 @@ export interface CountSeriesItem {
 
 interface OverviewTabProps {
   baseUrl: string;
+  t: UiStrings;
   items: CountSeriesItem[];
   pendingQueries: string[];
   corpus: ActiveCorpus;
@@ -40,6 +42,7 @@ interface PairComparisonRow {
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   baseUrl,
+  t,
   items,
   pendingQueries,
   corpus,
@@ -158,10 +161,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
       {/* Single expression view */}
       {singleItem && parsed && result && (
-        <section className="result-hero-card" aria-label="Telle-resultat">
+        <section className="result-hero-card" aria-label={t.hitsLabel}>
           <div className="result-metrics-grid">
             <div className="metric-block">
-              <span className="metric-label">Antall treff</span>
+              <span className="metric-label">{t.hitsLabel}</span>
               <strong className="metric-value">
                 {result.total.toLocaleString('nb-NO')}
               </strong>
@@ -171,24 +174,24 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             <div className="metric-block">
-              <span className="metric-label">Bøker med treff</span>
+              <span className="metric-label">{t.booksWithHitsLabel}</span>
               <strong className="metric-value">
                 {result.docs.toLocaleString('nb-NO')}
               </strong>
               <span className="metric-sub">
-                Dekning: {((result.docs / totalBooksInScope) * 100).toFixed(2)} % av{' '}
-                {totalBooksInScope.toLocaleString('nb-NO')} bøker · Intensitet:{' '}
-                {result.docs > 0 ? (result.total / result.docs).toFixed(1) : '0'} treff/bok
+                {t.coverageLabel}: {((result.docs / totalBooksInScope) * 100).toFixed(2)} % (
+                {totalBooksInScope.toLocaleString('nb-NO')} {t.booksUnit}) · {t.intensityLabel}:{' '}
+                {result.docs > 0 ? (result.total / result.docs).toFixed(1) : '0'} {t.hitsPerBook}
               </span>
             </div>
 
             <div className="metric-block">
-              <span className="metric-label">Svartid</span>
+              <span className="metric-label">{t.responseTimeLabel}</span>
               <strong className="metric-value speed-value">
                 {clientMs !== null ? `${clientMs} ms` : '–'}
               </strong>
               <span className="metric-sub">
-                Modus: <code>{result.countMode}</code> ({result._engine || 'arena'})
+                <code>{result.countMode}</code> ({result._engine || 'arena'})
               </span>
             </div>
           </div>
@@ -202,10 +205,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 disabled={compLoading}
               >
                 {compLoading
-                  ? 'Sammenligner…'
+                  ? t.comparingBtn
                   : parsed.pairWords.length >= 3
-                  ? `Sammenlign Spenn vs. ^anker`
-                  : `Sammenlign Par vs. ^${parsed.pairWords[0]} vs. ^${parsed.pairWords[1]}`}
+                  ? t.compareSpansBtn
+                  : t.comparePairBtn}
               </button>
             )}
 
@@ -214,7 +217,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               className="btn-secondary"
               onClick={exportCountsExcel}
             >
-              Last ned Excel (.xlsx)
+              {t.downloadExcel}
             </button>
           </div>
         </section>
@@ -224,10 +227,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {(items.length > 1 || (items.length >= 1 && pendingQueries.length > 0)) && (
         <section
           className="card-box"
-          aria-label="Sammenligning av søkeuttrykk"
+          aria-label={t.resultsCountHeader}
         >
           <div className="section-header-row">
-            <h3>Resultater ({items.length + pendingQueries.length} søkeuttrykk)</h3>
+            <h3>
+              {t.resultsCountHeader} ({items.length + pendingQueries.length})
+            </h3>
             <div className="trend-controls-right">
               <button
                 type="button"
@@ -235,14 +240,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 onClick={exportCountsExcel}
                 disabled={items.length === 0}
               >
-                Last ned Excel (.xlsx)
+                {t.downloadExcel}
               </button>
               <button
                 type="button"
                 className="btn-secondary"
                 onClick={() => onSwitchTab('trends')}
               >
-                Vis som trendkurver →
+                {t.showAsTrends}
               </button>
             </div>
           </div>
@@ -250,20 +255,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div
             tabIndex={0}
             role="region"
-            aria-label="Resultattabell"
+            aria-label={t.resultsCountHeader}
             className="table-wrapper"
           >
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Søkeuttrykk</th>
-                  <th scope="col">Tellemåte</th>
-                  <th scope="col">Treff</th>
-                  <th scope="col">Bøker</th>
-                  <th scope="col">Dekning (doc/N)</th>
-                  <th scope="col">Intensitet (treff/bok)</th>
-                  <th scope="col">Tid</th>
-                  <th scope="col">Konkordans</th>
+                  <th scope="col">{t.colExpression}</th>
+                  <th scope="col">{t.colCountMode}</th>
+                  <th scope="col">{t.colHits}</th>
+                  <th scope="col">{t.colBooks}</th>
+                  <th scope="col">{t.colCoverage}</th>
+                  <th scope="col">{t.colIntensity}</th>
+                  <th scope="col">{t.colTime}</th>
+                  <th scope="col">{t.colConcordance}</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,7 +303,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           disabled={item.parsed.hasWildcardOrGroup}
                           onClick={() => onFetchConcordanceFor(item.parsed)}
                         >
-                          Vis →
+                          {t.showBtn}
                         </button>
                       </td>
                     </tr>

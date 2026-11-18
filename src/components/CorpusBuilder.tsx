@@ -8,9 +8,11 @@ import {
   splitTopLevelAnd,
 } from '../api';
 import { parseCorpusFile } from '../excelCorpusParser';
+import { UiStrings } from '../i18n';
 
 interface CorpusBuilderProps {
   open: boolean;
+  t: UiStrings;
   baseUrl: string;
   corpus: ActiveCorpus;
   onCorpusChange: (next: ActiveCorpus) => void;
@@ -19,6 +21,7 @@ interface CorpusBuilderProps {
 
 export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   open,
+  t,
   baseUrl,
   corpus,
   onCorpusChange,
@@ -271,15 +274,15 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
     <dialog
       ref={dialogRef}
       className="corpus-modal"
-      aria-label="Definer korpus"
+      aria-label={t.corpusModalTitle}
       onClose={onClose}
     >
       <div className="modal-header">
-        <h2>Definer korpus</h2>
+        <h2>{t.corpusModalTitle}</h2>
         <button
           type="button"
           className="btn-icon"
-          aria-label="Lukk dialog"
+          aria-label={t.closeBtn}
           onClick={onClose}
         >
           ✕
@@ -300,13 +303,13 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       <div className="upload-dropzone" style={{ marginBlockEnd: '1rem' }}>
         <div className="upload-row">
           <div>
-            <strong>Last opp korpusfil (.xlsx eller .csv)</strong>
+            <strong>{t.uploadFileTitle}</strong>
             <div className="muted" style={{ fontSize: '0.82rem' }}>
-              Konverterer kolonnen <code>dhlabid</code> eller <code>urn</code> til Roaring-bitmap
+              {t.uploadFileSub}
             </div>
           </div>
           <label htmlFor={fileInputId} className="btn-secondary file-label-btn">
-            {building ? 'Leser…' : 'Velg fil…'}
+            {building ? t.readingBtn : t.chooseFileBtn}
           </label>
           <input
             ref={fileInputRef}
@@ -324,36 +327,32 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
 
       <form onSubmit={(e) => void handleBuild(e)} className="modal-form">
         <div className="field-stack" style={{ marginBlockEnd: '0.85rem' }}>
-          <label htmlFor={corpusNameId}>
-            Navn på korpus (lagres automatisk under «Mine korpus»)
-          </label>
+          <label htmlFor={corpusNameId}>{t.corpusNameLabel}</label>
           <input
             id={corpusNameId}
             type="text"
             value={customName}
-            placeholder="f.eks. Skibsvrag, Ibsen-drama eller Avhandlinger 1990"
+            placeholder={t.corpusNamePlaceholder}
             onChange={(e) => setCustomName(e.target.value)}
           />
         </div>
 
         {/* 2. Begrens på søkeuttrykk (near_query eller enkeltord) */}
         <div className="field-stack" style={{ marginBlockEnd: '0.85rem' }}>
-          <label htmlFor={textQueryId}>
-            Begrens på søkeuttrykk i teksten (enkeltord, ordpar eller frase)
-          </label>
+          <label htmlFor={textQueryId}>{t.textFilterLabel}</label>
           <div className="input-with-btn">
             <input
               id={textQueryId}
               type="text"
               value={textFilter}
-              placeholder='f.eks. sjarken, demokrati diktatur eller "i forhold til"'
+              placeholder='demokrati diktatur / NEAR(skib storm, 10)'
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
               onChange={(e) => setTextFilter(e.target.value)}
             />
             <div className="field-inline" style={{ flex: 'none' }}>
-              <label htmlFor={textWindowId}>Vindu</label>
+              <label htmlFor={textWindowId}>{t.windowLabel}</label>
               <input
                 id={textWindowId}
                 type="text"
@@ -373,7 +372,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         {/* 3. Metadata */}
         <div className="modal-grid">
           <div className="field-stack">
-            <label htmlFor={yearFromId}>Fra år</label>
+            <label htmlFor={yearFromId}>{t.fromYear}</label>
             <input
               id={yearFromId}
               type="text"
@@ -384,7 +383,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
             />
           </div>
           <div className="field-stack">
-            <label htmlFor={yearToId}>Til år</label>
+            <label htmlFor={yearToId}>{t.toYear}</label>
             <input
               id={yearToId}
               type="text"
@@ -395,40 +394,40 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
             />
           </div>
           <div className="field-stack">
-            <label htmlFor={langSelectId}>Språk</label>
+            <label htmlFor={langSelectId}>{t.langLabel}</label>
             <select
               id={langSelectId}
               value={lang}
               onChange={(e) => setLang(e.target.value)}
             >
-              <option value="">Alle språk</option>
+              <option value="">{t.allLangs}</option>
               <option value="nob">Bokmål (nob)</option>
               <option value="nno">Nynorsk (nno)</option>
               <option value="dan">Dansk (dan)</option>
-              <option value="eng">Engelsk (eng)</option>
-              <option value="ger">Tysk (ger)</option>
+              <option value="eng">English (eng)</option>
+              <option value="ger">Deutsch (ger)</option>
             </select>
           </div>
           <div className="field-stack">
-            <label htmlFor={formSelectId}>Litterær form</label>
+            <label htmlFor={formSelectId}>{t.formLabel}</label>
             <select
               id={formSelectId}
               value={literaryForm}
               onChange={(e) => setLiteraryForm(e.target.value)}
             >
-              <option value="">Alle former</option>
+              <option value="">{t.allForms}</option>
               <option value="Skjønnlitteratur">Skjønnlitteratur</option>
               <option value="Faglitteratur">Faglitteratur</option>
               <option value="Uklassifisert">Uklassifisert</option>
             </select>
           </div>
           <div className="field-stack">
-            <label htmlFor={authorInputId}>Forfatter (starter med)</label>
+            <label htmlFor={authorInputId}>{t.authorLabel}</label>
             <input
               id={authorInputId}
               type="text"
               value={authorPrefix}
-              placeholder="f.eks. Ibsen eller Hamsun"
+              placeholder="Ibsen / Hamsun"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
@@ -436,12 +435,12 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
             />
           </div>
           <div className="field-stack">
-            <label htmlFor={subjectInputId}>Emneord (starter med)</label>
+            <label htmlFor={subjectInputId}>{t.subjectLabel}</label>
             <input
               id={subjectInputId}
               type="text"
               value={subjectPrefix}
-              placeholder="f.eks. Historie eller Norge"
+              placeholder="Historie / Norge"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
@@ -451,15 +450,13 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         </div>
 
         <div className="field-stack" style={{ marginBlockStart: '0.75rem' }}>
-          <label htmlFor={rawIdsId}>
-            Eller lim inn <code>dhlabid</code> / <code>URN</code> direkte (valgfritt)
-          </label>
+          <label htmlFor={rawIdsId}>{t.pasteIdsLabel}</label>
           <textarea
             id={rawIdsId}
             rows={2}
             value={rawIdsText}
             onChange={(e) => setRawIdsText(e.target.value)}
-            placeholder="100000100, 100000200 eller URN:NBN:no-nb_digibok_..."
+            placeholder="100000100, 100000200 / URN:NBN:no-nb_digibok_..."
           />
         </div>
 
@@ -473,14 +470,14 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
                 void navigator.clipboard.writeText(corpus.corpusToken!);
               }}
             >
-              Kopier Roaring-token
+              {t.copyTokenBtn}
             </button>
           )}
           <button type="button" className="btn-secondary" onClick={onClose}>
-            Avbryt
+            {t.cancelBtn}
           </button>
           <button type="submit" className="btn-primary" disabled={building}>
-            {building ? 'Bygger korpus…' : 'Bruk korpus'}
+            {building ? t.buildingCorpusBtn : t.applyCorpusBtn}
           </button>
         </div>
       </form>

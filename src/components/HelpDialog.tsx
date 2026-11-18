@@ -1,13 +1,16 @@
 import React, { useEffect, useRef } from 'react';
+import { UiStrings } from '../i18n';
 
 interface HelpDialogProps {
   open: boolean;
+  t: UiStrings;
   onClose: () => void;
   onTryQuery?: (q: string) => void;
 }
 
 export const HelpDialog: React.FC<HelpDialogProps> = ({
   open,
+  t,
   onClose,
   onTryQuery,
 }) => {
@@ -34,15 +37,15 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
     <dialog
       ref={dialogRef}
       className="corpus-modal help-modal"
-      aria-label="Om Korpusmotoren og søkesyntaks"
+      aria-label={t.helpTitle}
       onClose={onClose}
     >
       <div className="modal-header">
-        <h2>Om DHLAB Korpusmotor</h2>
+        <h2>{t.helpTitle}</h2>
         <button
           type="button"
           className="btn-icon"
-          aria-label="Lukk hjelp"
+          aria-label={t.closeBtn}
           onClick={onClose}
         >
           ✕
@@ -50,56 +53,27 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
       </div>
 
       <div className="help-content">
-        <p>
-          Korpusmotoren søker i hele Nasjonalbibliotekets digitaliserte boksamling (
-          <strong>713 913 bøker</strong> og <strong>38,5 milliarder ord</strong>). Alle
-          tellinger og trender beregnes eksakt uten utvalg ved hjelp av Roaring-bitmaps og
-          arena-indekser.
-        </p>
+        <p>{t.helpIntro}</p>
 
         <section className="help-section">
-          <h3>1. Bygge og bruke korpus («korpus i lomma»)</h3>
-          <p>
-            Som standard søker du i hele boksamlingen. Klikk på{' '}
-            <strong>«Definer korpus…»</strong> øverst for å avgrense hvilke bøker det
-            søkes i:
-          </p>
-          <ul>
-            <li>
-              <strong>Fra fil (.xlsx eller .csv):</strong> Last opp et regneark med en
-              kolonne kalt <code>dhlabid</code> eller <code>urn</code> (
-              <code>URN:NBN:no-nb_...</code>).
-            </li>
-            <li>
-              <strong>Fra katalogmetadata:</strong> Filtrer på utgivelsesår, språk,
-              litterær form, forfatter eller emneord.
-            </li>
-            <li>
-              <strong>Fra søkeuttrykk i teksten:</strong> Velg alle bøker som inneholder et
-              ord, et nærhetssøk eller en frase (kan også kjedes med <code>AND</code>).
-            </li>
-          </ul>
-          <p>
-            Korpuset komprimeres til et bærbart Roaring-bitmap (<code>corpusToken</code>)
-            og lagres automatisk i nettleseren under <strong>«Mine korpus ▾»</strong>. Jo
-            mindre korpuset er, desto raskere går søket.
-          </p>
+          <h3>{t.helpSec1Title}</h3>
+          <p>{t.helpSec1Desc}</p>
         </section>
 
         <section className="help-section">
-          <h3>2. Søkesyntaks (klikk på et eksempel for å prøve)</h3>
+          <h3>{t.helpSec2Title}</h3>
           <div className="table-wrapper">
             <table>
               <thead>
                 <tr>
-                  <th scope="col">Type søk</th>
-                  <th scope="col">Syntaks</th>
-                  <th scope="col">Hva som telles (`countMode`)</th>
+                  <th scope="col">{t.colCountMode}</th>
+                  <th scope="col">{t.colExpression}</th>
+                  <th scope="col">Payload / countMode</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <th scope="row">Enkeltord</th>
+                  <th scope="row">Single (tf)</th>
                   <td>
                     <button
                       type="button"
@@ -109,10 +83,12 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                       <code>demokrati</code>
                     </button>
                   </td>
-                  <td>Totalt antall forekomster av ordet (<code>tf</code>).</td>
+                  <td>
+                    <code>countMode: "tf"</code>
+                  </td>
                 </tr>
                 <tr>
-                  <th scope="row">Ordpar i nærhet</th>
+                  <th scope="row">Pairs (W)</th>
                   <td>
                     <button
                       type="button"
@@ -123,11 +99,11 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                     </button>
                   </td>
                   <td>
-                    Alle par innenfor vinduet <em>W</em>, symmetrisk (<code>pairs</code>).
+                    <code>countMode: "pairs"</code>
                   </td>
                 </tr>
                 <tr>
-                  <th scope="row">Anker (<code>^ord</code>)</th>
+                  <th scope="row">Anchor (<code>^</code>)</th>
                   <td>
                     <button
                       type="button"
@@ -138,12 +114,11 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                     </button>
                   </td>
                   <td>
-                    Forekomster av <code>diktatur</code> med <code>demokrati</code>{' '}
-                    innenfor <em>W</em> ord (<code>anchor</code>).
+                    <code>countMode: "anchor"</code>
                   </td>
                 </tr>
                 <tr>
-                  <th scope="row">3+ ord i nærhet</th>
+                  <th scope="row">3+ Spans</th>
                   <td>
                     <button
                       type="button"
@@ -154,12 +129,11 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                     </button>
                   </td>
                   <td>
-                    Ikke-overlappende minimale spenn ≤ <em>W</em> ord der alle ordene står
-                    sammen (<code>spans</code>).
+                    <code>countMode: "spans"</code>
                   </td>
                 </tr>
                 <tr>
-                  <th scope="row">Eksakt frase</th>
+                  <th scope="row">Phrase</th>
                   <td>
                     <button
                       type="button"
@@ -169,10 +143,12 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                       <code>"i forhold til"</code>
                     </button>
                   </td>
-                  <td>Ordene rett etter hverandre i rekkefølge (<code>sequence</code>).</td>
+                  <td>
+                    <code>countMode: "sequence"</code>
+                  </td>
                 </tr>
                 <tr>
-                  <th scope="row">Sammenlign flere (komma)</th>
+                  <th scope="row">Multi (<code>,</code>)</th>
                   <td>
                     <button
                       type="button"
@@ -182,13 +158,10 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                       <code>demokrati, diktatur</code>
                     </button>
                   </td>
-                  <td>
-                    Kjører uttrykkene etter hverandre og viser dem i tabell eller som
-                    flere trendkurver.
-                  </td>
+                  <td>Sequential multi-query</td>
                 </tr>
                 <tr>
-                  <th scope="row">Wildcard og OR-grupper</th>
+                  <th scope="row">OR / Wildcard</th>
                   <td>
                     <button
                       type="button"
@@ -199,8 +172,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                     </button>
                   </td>
                   <td>
-                    Union av ordvarianter per gruppe (støtter også <code>demokrati*</code>{' '}
-                    og <code>skib+skip</code>).
+                    <code>termGroups</code> / <code>demokrati*</code>
                   </td>
                 </tr>
               </tbody>
@@ -209,11 +181,8 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
         </section>
 
         <section className="help-section">
-          <h3>3. FTS5- og Elastic-syntaks</h3>
-          <p>
-            Søkemotoren forstår også eldre FTS5-uttrykk (fra notebooks) og
-            Elastic-nærhet (fra Nettbiblioteket). Dialekter kan ikke blandes i samme søk:
-          </p>
+          <h3>{t.helpSec3Title}</h3>
+          <p>{t.helpSec3Desc}</p>
           <ul>
             <li>
               <strong>FTS5 <code>NEAR</code>:</strong>{' '}
@@ -223,8 +192,8 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                 onClick={() => tryExample('NEAR(skib storm, 10)')}
               >
                 <code>NEAR(skib storm, 10)</code>
-              </button>{' '}
-              (symmetrisk),{' '}
+              </button>
+              ,{' '}
               <button
                 type="button"
                 className="btn-link-inline"
@@ -232,18 +201,19 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
               >
                 <code>NEAR(skib storm, +10)</code>
               </button>{' '}
-              eller <code>NEAR(skib storm, 10, asym)</code> (ordnet <em>A → B</em>), og{' '}
+              (<em>A → B</em>),{' '}
               <button
                 type="button"
                 className="btn-link-inline"
                 onClick={() => tryExample('NEAR(skib ^storm, 10)')}
               >
                 <code>NEAR(skib ^storm, 10)</code>
-              </button>{' '}
-              (med anker).
+              </button>
             </li>
             <li>
-              <strong>Kjedet <code>AND</code> på boknivå:</strong>{' '}
+              <strong>
+                <code>AND</code>:
+              </strong>{' '}
               <button
                 type="button"
                 className="btn-link-inline"
@@ -252,12 +222,10 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                 }
               >
                 <code>NEAR(skib storm, 5) AND NEAR(hav vind, 10)</code>
-              </button>{' '}
-              snitter bøkene som inneholder begge uttrykkene (sett <code>^</code> på det
-              leddet du vil telle/vise konkordans for).
+              </button>
             </li>
             <li>
-              <strong>Elastic / Nettbiblioteket:</strong>{' '}
+              <strong>Elastic:</strong>{' '}
               <button
                 type="button"
                 className="btn-link-inline"
@@ -265,41 +233,39 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
               >
                 <code>"demokrati diktatur"~10</code>
               </button>{' '}
-              eller <code>demokrati NEAR/10 diktatur</code>.
+              / <code>demokrati NEAR/10 diktatur</code>
             </li>
           </ul>
         </section>
 
         <section className="help-section">
-          <h3>4. Måltall i Trender og Telling</h3>
+          <h3>{t.helpSec4Title}</h3>
           <ul>
             <li>
-              <strong>Per million ord (ppm):</strong> Relativ frekvens i korpuset (
-              <code>(treff / tokens) × 1 000 000</code>).
+              <strong>{t.metricPpm}:</strong>{' '}
+              <code>(total / tokens) × 1,000,000</code>
             </li>
             <li>
-              <strong>Kohort (%):</strong> Hver kurves andel av kurvegruppens samlede
-              frekvens hvert år (summerer til 100 %).
+              <strong>{t.metricCohort}:</strong>{' '}
+              <code>f_i(y) / Σ f_j(y) × 100%</code>
             </li>
             <li>
-              <strong>Dekning (andel bøker %):</strong> Prosentandel av bøkene i korpuset (
-              <code>docs / books</code>) som inneholder uttrykket.
+              <strong>{t.metricCoverage}:</strong>{' '}
+              <code>docs / books × 100%</code>
             </li>
             <li>
-              <strong>Intensitet (treff/bok):</strong> Gjennomsnittlig antall treff per bok
-              blant bøkene der uttrykket faktisk forekommer (<code>total / docs</code>).
+              <strong>{t.metricIntensity}:</strong> <code>total / docs</code>
             </li>
           </ul>
           <p className="muted" style={{ fontSize: '0.82rem', marginBlockEnd: 0 }}>
-            Konkordansvisningen følger Nasjonalbibliotekets rammer for opphavsrett: maks 25
-            ord per utdrag (klippet ved avsnitt), maks 200 linjer og maks 10 % av hver bok.
+            {t.helpCopyright}
           </p>
         </section>
       </div>
 
       <div className="modal-footer">
         <button type="button" className="btn-primary" onClick={onClose}>
-          Lukk
+          {t.closeBtn}
         </button>
       </div>
     </dialog>

@@ -1,6 +1,7 @@
 import React, { useId, useMemo, useState } from 'react';
 import { YearCountRow } from '../api';
 import { downloadExcelFile } from '../excelExport';
+import { UiStrings } from '../i18n';
 
 export interface TrendSeriesItem {
   query: string;
@@ -12,6 +13,7 @@ export interface TrendSeriesItem {
 }
 
 interface TrendChartProps {
+  t: UiStrings;
   seriesList: TrendSeriesItem[];
   pendingQueries: string[];
   loading: boolean;
@@ -34,6 +36,7 @@ export const SERIES_COLORS = [
 ];
 
 export const TrendChart: React.FC<TrendChartProps> = ({
+  t,
   seriesList,
   pendingQueries,
   loading,
@@ -267,7 +270,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     <div className="panel-inner">
       <div className="trend-toolbar">
         <fieldset className="radio-fieldset">
-          <legend className="visually-hidden">Måltall i kurven</legend>
+          <legend className="visually-hidden">Metric</legend>
           <div className="radio-row">
             <span className="radio-item">
               <input
@@ -277,7 +280,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 checked={metric === 'perMillion'}
                 onChange={() => setMetric('perMillion')}
               />
-              <label htmlFor={`${metricGroupName}-pm`}>Per million ord</label>
+              <label htmlFor={`${metricGroupName}-pm`}>{t.metricPpm}</label>
             </span>
 
             <span className="radio-item">
@@ -288,7 +291,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 checked={metric === 'cohort'}
                 onChange={() => setMetric('cohort')}
               />
-              <label htmlFor={`${metricGroupName}-cohort`}>Kohort (%)</label>
+              <label htmlFor={`${metricGroupName}-cohort`}>{t.metricCohort}</label>
             </span>
 
             <span className="radio-item">
@@ -300,7 +303,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 onChange={() => setMetric('docShare')}
               />
               <label htmlFor={`${metricGroupName}-doc`}>
-                Dekning (andel bøker %)
+                {t.metricCoverage}
               </label>
             </span>
 
@@ -313,7 +316,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 onChange={() => setMetric('concentration')}
               />
               <label htmlFor={`${metricGroupName}-conc`}>
-                Intensitet (treff/bok)
+                {t.metricIntensity}
               </label>
             </span>
 
@@ -325,23 +328,23 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 checked={metric === 'total'}
                 onChange={() => setMetric('total')}
               />
-              <label htmlFor={`${metricGroupName}-tot`}>Absolutt antall</label>
+              <label htmlFor={`${metricGroupName}-tot`}>{t.metricTotal}</label>
             </span>
           </div>
         </fieldset>
 
         <div className="trend-controls-right">
           <div className="field-inline">
-            <label htmlFor={smoothSelectId}>Glatting</label>
+            <label htmlFor={smoothSelectId}>{t.smoothingLabel}</label>
             <select
               id={smoothSelectId}
               value={smoothing}
               onChange={(e) => setSmoothing(Number(e.target.value))}
             >
-              <option value={1}>Ingen (1 år)</option>
-              <option value={3}>3-års snitt</option>
-              <option value={5}>5-års snitt</option>
-              <option value={11}>11-års snitt</option>
+              <option value={1}>{t.smooth1}</option>
+              <option value={3}>{t.smooth3}</option>
+              <option value={5}>{t.smooth5}</option>
+              <option value={11}>{t.smooth11}</option>
             </select>
           </div>
 
@@ -351,7 +354,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             onClick={() => setShowNumbers((v) => !v)}
             disabled={computedSeries.length === 0}
           >
-            {showNumbers ? 'Skjul tall' : 'Vis tall'}
+            {showNumbers ? t.hideNumbers : t.showNumbers}
           </button>
 
           <button
@@ -537,7 +540,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             <figcaption className="chart-caption">
               {hoverIndex !== null && hoveredYear !== null ? (
                 <div className="hover-multi-readout">
-                  <strong>År {hoveredYear}:</strong>
+                  <strong>
+                    {t.yearLabel} {hoveredYear}:
+                  </strong>
                   {computedSeries.map((s) => {
                     const r = s.alignedRows[hoverIndex];
                     const v = s.values[hoverIndex] ?? 0;
@@ -548,7 +553,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                           style={{ background: s.color }}
                         />
                         <code>{s.query}</code>: <strong>{formatMetric(v)}</strong>{' '}
-                        ({r.total.toLocaleString('nb-NO')} treff i {r.docs} bøker)
+                        ({r.total.toLocaleString('nb-NO')} · {r.docs} {t.booksUnit})
                       </span>
                     );
                   })}
@@ -556,12 +561,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               ) : (
                 <span>
                   {metric === 'concentration'
-                    ? 'Intensitet (treff / bøker med treff): gjennomsnittlig antall forekomster per bok der uttrykket forekommer.'
+                    ? t.hoverHintIntensity
                     : metric === 'docShare'
-                    ? 'Dekning (bøker med treff / bøker i korpuset): prosentandel av bøkene hvert år som inneholder uttrykket.'
+                    ? t.hoverHintCoverage
                     : metric === 'cohort'
-                    ? 'Kohort (%): hver kurves relative andel av kurvegruppens samlede frekvens hvert år (summerer til 100 %).'
-                    : 'Hold pekeren over grafen for verdier per år.'}
+                    ? t.hoverHintCohort
+                    : t.hoverHintPpm}
                 </span>
               )}
             </figcaption>

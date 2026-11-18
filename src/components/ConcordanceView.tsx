@@ -1,8 +1,10 @@
 import React, { useId } from 'react';
 import { ConcordanceResponse, ParsedQuery } from '../api';
 import { downloadExcelFile } from '../excelExport';
+import { UiStrings } from '../i18n';
 
 interface ConcordanceViewProps {
+  t: UiStrings;
   queryText: string;
   parsed: ParsedQuery;
   parsedList: ParsedQuery[];
@@ -19,6 +21,7 @@ interface ConcordanceViewProps {
 }
 
 export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
+  t,
   queryText,
   parsed,
   parsedList,
@@ -54,7 +57,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
         <div className="conc-controls">
           {parsedList.length > 1 && (
             <div className="field-inline">
-              <span>Uttrykk:</span>
+              <span>{t.exprLabel}</span>
               {parsedList.map((p) => (
                 <button
                   key={p.raw}
@@ -71,7 +74,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
           )}
 
           <div className="field-inline">
-            <label htmlFor={limitSelectId}>Antall linjer</label>
+            <label htmlFor={limitSelectId}>{t.linesCountLabel}</label>
             <select
               id={limitSelectId}
               value={limit}
@@ -97,7 +100,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
             onClick={onFetch}
             disabled={loading || parsed.terms.length === 0 || parsed.hasWildcardOrGroup}
           >
-            {loading ? 'Henter…' : 'Hent på nytt'}
+            {loading ? t.fetchingBtn : t.refetchBtn}
           </button>
 
           {data && data.rows.length > 0 && (
@@ -113,7 +116,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
 
         {data && (
           <div className="muted" style={{ fontSize: '0.85rem' }}>
-            {data.lines} linjer fra {data.books} bøker ·{' '}
+            {t.linesFromBooks(data.lines, data.books)} ·{' '}
             <strong className="speed-highlight">{clientMs} ms</strong>
           </div>
         )}
@@ -155,13 +158,13 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                   dhlabid
                 </th>
                 <th scope="col" className="col-left">
-                  Venstre kontekst
+                  {t.colLeft}
                 </th>
                 <th scope="col" className="col-hit">
-                  Treff
+                  {t.colHit}
                 </th>
                 <th scope="col" className="col-right">
-                  Høyre kontekst
+                  {t.colRight}
                 </th>
               </tr>
             </thead>
