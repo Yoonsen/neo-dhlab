@@ -163,22 +163,46 @@ async function parseXlsxRows(buffer: ArrayBuffer): Promise<string[][]> {
   return table;
 }
 
+function splitCsvLine(line: string, sep: string): string[] {
+  const cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && ch === sep) {
+      cells.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
 function parseDelimitedRows(text: string): string[][] {
-  const lines = text
+  const cleanText = text.replace(/^\uFEFF/, '');
+  const lines = cleanText
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length === 0) return [];
   const sep = lines[0].includes('\t')
     ? '\t'
-    : lines[0].includes(';')
+    : lines[0].includes(';') && !lines[0].includes('","')
     ? ';'
     : ',';
-  return lines.map((line) =>
-    line
-      .split(sep)
-      .map((cell) => cell.trim().replace(/^["']|["']$/g, ''))
-  );
+  return lines.map((line) => splitCsvLine(line, sep));
 }
 
 function extractIdsFromTable(rows: string[][]): ExtractedCorpusIds {
@@ -197,7 +221,12 @@ function extractIdsFromTable(rows: string[][]): ExtractedCorpusIds {
 
   if (dhlabidCol !== -1) {
     for (let r = 1; r < rows.length; r++) {
-      const raw = (rows[r][dhlabidCol] ?? '').trim();
+      const row = rows[r];
+      let raw = (row[dhlabidCol] ?? '').trim();
+      // Hvis en rad har ubalanserte anførselstegn og dhlabid står som siste kolonne i CSV-en, sjekk også siste celle i raden
+      if (!/^\d+(?:\.0+)?$/.test(raw) && dhlabidCol === header.length - 1 && row.length > 0) {
+        raw = (row[row.length - 1] ?? '').trim();
+      }
       const cleaned = raw.replace(/\.0+$/, '');
       if (/^\d+$/.test(cleaned)) {
         const num = parseInt(cleaned, 10);
@@ -220,6 +249,8 @@ function extractIdsFromTable(rows: string[][]): ExtractedCorpusIds {
         urnsSet.add(raw);
       } else if (raw.startsWith('digibok_')) {
         urnsSet.add(`URN:NBN:no-nb_${raw}`);
+      } else if (/^\d{13}$/.test(raw)) {
+        urnsSet.add(`URN:NBN:no-nb_digibok_${raw}`);
       } else if (/^\d{9,10}$/.test(raw)) {
         dhlabidsSet.add(parseInt(raw, 10));
       }
