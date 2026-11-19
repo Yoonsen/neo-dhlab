@@ -182,8 +182,14 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         totalMs += clientMs;
       }
 
-      // 3. Hvis brukeren har skrevet søkeuttrykk (f.eks. NEAR(a b, 5) AND NEAR(c d, 10)) for å avgrense korpuset
-      const cleanText = textFilter.trim();
+      // 3. Hvis brukeren har skrevet søkeuttrykk (f.eks. NEAR(a b, 5) AND NEAR(c d, 10) eller doc WHERE ... / {doc | ...}) for å avgrense korpuset
+      let cleanText = textFilter.trim();
+      const setDocMatch = cleanText.match(/^\{\s*doc\s*\|\s*([^{}]+?)\s*\}$/i);
+      if (setDocMatch) {
+        cleanText = setDocMatch[1].trim();
+      } else if (/^doc\s+WHERE\s+/i.test(cleanText)) {
+        cleanText = cleanText.replace(/^doc\s+WHERE\s+/i, '').trim();
+      }
       if (cleanText) {
         const clauses = splitTopLevelAnd(cleanText);
         let curToken = metaCorpusToken;

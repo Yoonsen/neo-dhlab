@@ -138,12 +138,12 @@ export function splitSearchExpressions(rawInput: string): string[] {
       continue;
     }
     if (!inQuotes) {
-      if (ch === '(') {
+      if (ch === '(' || ch === '{') {
         parenDepth++;
         current += ch;
         continue;
       }
-      if (ch === ')') {
+      if (ch === ')' || ch === '}') {
         parenDepth = Math.max(0, parenDepth - 1);
         current += ch;
         continue;
@@ -200,7 +200,11 @@ function detectAndValidateDialect(expr: string): {
   dialect: SyntaxDialect;
   error: string | null;
 } {
-  const s = expr.trim();
+  // 1b. Hvis uttrykket er på mengdebygger-formen { ground | predikat }, gjør det om til ground WHERE predikat
+  const setBuilderMatch = expr.trim().match(/^\{\s*([^|{}]+?)\s*\|\s*([^{}]+?)\s*\}$/);
+  const s = setBuilderMatch
+    ? `${setBuilderMatch[1].trim()} WHERE ${setBuilderMatch[2].trim()}`
+    : expr.trim();
   if (!s) return { dialect: 'native', error: null };
 
   // 1. Sjekk ubalanserte anførselstegn
@@ -248,20 +252,24 @@ function detectAndValidateDialect(expr: string): {
 
   // 3. Oppdag spesifikke markører for hver dialekt
   const hasFts5Near = /\bNEAR\s*\(/.test(s);
+  const hasWhere = /\bWHERE\b/.test(s);
   const hasElasticTilde = /["»]\s*~\s*\d*/.test(s) || /\S+~\d*/.test(s);
   const hasElasticNearSlash = /\bNEAR\/\d*/.test(s);
   const hasNativeAnchor = /(?:^|\s|\()\^\S+/.test(s);
   const hasBoolOps = /\b(?:AND|OR|NOT)\b/.test(s);
 
-  const isFts5 = hasFts5Near || (hasBoolOps && !hasElasticTilde && !hasElasticNearSlash);
+  const isFts5 =
+    hasWhere ||
+    hasFts5Near ||
+    (hasBoolOps && !hasElasticTilde && !hasElasticNearSlash);
   const isElastic = hasElasticTilde || hasElasticNearSlash;
 
-  // 4. Forby blanding av FTS5 og Elastic (men tillat ^anker som utvidelse i FTS5!)
-  if (hasFts5Near && isElastic) {
+  // 4. Forby blanding av FTS5 og Elastic (men tillat ^anker og WHERE som utvidelse i FTS5!)
+  if ((hasFts5Near || hasWhere) && isElastic) {
     return {
       dialect: 'fts5',
       error:
-        'Syntaksfeil: Kan ikke blande FTS5 (NEAR(...)) og Elastic-syntaks ("..."~n eller NEAR/n) i samme søk.',
+        'Syntaksfeil: Kan ikke blande FTS5/WHERE (NEAR(...)) og Elastic-syntaks ("..."~n eller NEAR/n) i samme søk.',
     };
   }
   if (isElastic && hasNativeAnchor) {
@@ -272,7 +280,7 @@ function detectAndValidateDialect(expr: string): {
     };
   }
 
-  // 5. Valider boolske operatorer (AND, OR, NOT)
+  // 5. Valider boolske operatorer (WHERE, AND, OR, NOT)
   if (/\bNOT\b/.test(s)) {
     return {
       dialect: isElastic ? 'elastic' : 'fts5',
@@ -280,21 +288,21 @@ function detectAndValidateDialect(expr: string): {
         'NOT støttes ikke i nærhetssøk på posisjonsnivå.',
     };
   }
-  if (/^(?:AND|OR)\b|\b(?:AND|OR)$/.test(s)) {
+  if (/^(?:AND|OR|WHERE)\b|\b(?:AND|OR|WHERE)$/.test(s)) {
     return {
       dialect: isElastic ? 'elastic' : 'fts5',
       error:
-        'Syntaksfeil: Uttrykket kan ikke starte eller slutte med AND / OR.',
+        'Syntaksfeil: Uttrykket kan ikke starte eller slutte med WHERE / AND / OR.',
     };
   }
-  if (/\b(?:AND|OR)\s+(?:AND|OR)\b/.test(s)) {
+  if (/\b(?:AND|OR|WHERE)\s+(?:AND|OR|WHERE)\b/.test(s)) {
     return {
       dialect: isElastic ? 'elastic' : 'fts5',
-      error: 'Syntaksfeil: To boolske operatorer (AND / OR) rett etter hverandre.',
+      error: 'Syntaksfeil: To logiske operatorer (WHERE / AND / OR) rett etter hverandre.',
     };
   }
 
-  // 6. Valider FTS5 NEAR(...) (inkl. utvidet syntaks med ^anker og valgfri symmetri: +10 eller 3. argument)
+  // 6. Valider FTS5 NEAR(...) (støtter både NEAR(a b, 10) og NEAR(a, b, 10) samt +10 / asym og ^anker)
   if (hasFts5Near) {
     const nearMatches = Array.from(s.matchAll(/\^?\bNEAR\s*\(([^()]*)\)/g));
     if (nearMatches.length === 0) {
@@ -304,23 +312,41 @@ function detectAndValidateDialect(expr: string): {
       };
     }
     for (const m of nearMatches) {
-      let inner = m[1].trim();
-      const commaParts = inner.split(',');
-      if (commaParts.length > 3) {
-        return {
-          dialect: 'fts5',
-          error:
-            'Syntaksfeil i FTS5 NEAR(...): bruk NEAR(a b, 10) eller NEAR(a b, 10, false/asym).',
-        };
+      const inner = m[1].trim();
+      const commaParts = inner
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const symTokens = [
+        'true',
+        'false',
+        'sym',
+        'asym',
+        'ordered',
+        '->',
+        '0',
+        '1',
+      ];
+      let hasSymArg = false;
+      let hasWinArg = false;
+      let termParts = [...commaParts];
+
+      if (
+        termParts.length >= 2 &&
+        symTokens.includes(termParts[termParts.length - 1].toLowerCase()) &&
+        /^\+?\d+$/.test(termParts[termParts.length - 2])
+      ) {
+        hasSymArg = true;
+        termParts.pop();
       }
-      if (commaParts.length >= 2) {
-        const winStr = commaParts[1].trim();
-        if (!/^\+?\d+$/.test(winStr)) {
-          return {
-            dialect: 'fts5',
-            error: `Syntaksfeil i FTS5 NEAR(...): avstanden «${winStr}» må være et heltall (1–50, evt. +10 for asymmetrisk).`,
-          };
-        }
+
+      if (
+        termParts.length >= 2 &&
+        /^\+?\d+$/.test(termParts[termParts.length - 1])
+      ) {
+        hasWinArg = true;
+        const winStr = termParts.pop()!;
         const w = parseInt(winStr, 10);
         if (w < 1 || w > 50) {
           return {
@@ -328,33 +354,39 @@ function detectAndValidateDialect(expr: string): {
             error: `FTS5 NEAR-avstand (${w}) må være mellom 1 og 50.`,
           };
         }
-        if (commaParts.length === 3) {
-          const symArg = commaParts[2].trim().toLowerCase();
-          if (
-            ![
-              'true',
-              'false',
-              'sym',
-              'asym',
-              'ordered',
-              '->',
-              '0',
-              '1',
-            ].includes(symArg)
-          ) {
-            return {
-              dialect: 'fts5',
-              error: `Ukjent symmetri-argument «${commaParts[2].trim()}» i NEAR(...): bruk false/asym/-> for ordnet eller true/sym for symmetrisk.`,
-            };
-          }
+      } else if (
+        termParts.length === 2 &&
+        !/\s/.test(termParts[0]) &&
+        !/^\+?\d+$/.test(termParts[1]) &&
+        /\s/.test(inner) &&
+        !hasWhere
+      ) {
+        // F.eks. NEAR(a b, abc) der 2. del etter komma skulle vært et tall
+        const firstTokens = termParts[0].split(/\s+/).filter(Boolean);
+        if (firstTokens.length >= 2) {
+          return {
+            dialect: 'fts5',
+            error: `Syntaksfeil i FTS5 NEAR(...): avstanden «${termParts[1]}» må være et heltall (1–50, evt. +10 for asymmetrisk).`,
+          };
         }
-        inner = commaParts[0].trim();
       }
-      const words = inner.split(/\s+/).filter(Boolean);
-      if (words.length < 2) {
+
+      void hasSymArg;
+      void hasWinArg;
+
+      const words = termParts
+        .join(' ')
+        .split(/\s+/)
+        .filter(Boolean);
+
+      // Hvis uttrykket bruker WHERE (f.eks. a WHERE NEAR(b, 10)), kan venstresiden fylle inn 1. argument,
+      // ellers krever NEAR minst 2 søkeord
+      const minWords = hasWhere ? 1 : 2;
+      if (words.length < minWords) {
         return {
           dialect: 'fts5',
-          error: 'Syntaksfeil: FTS5 NEAR(...) krever minst to søkeord, f.eks. NEAR(skib storm, 10).',
+          error:
+            'Syntaksfeil: FTS5 NEAR(...) krever minst to søkeord, f.eks. NEAR(skib, storm, 10) eller a WHERE NEAR(a, b, 10).',
         };
       }
     }
@@ -409,6 +441,50 @@ function detectAndValidateDialect(expr: string): {
 }
 
 /**
+ * Deler et uttrykk på toppnivå ALL-CAPS 'WHERE' (utenfor parenteser og anførselstegn).
+ * Returnerer { ground, predicate } eller null hvis ingen toppnivå WHERE finnes.
+ */
+export function splitTopLevelWhere(
+  expr: string
+): { ground: string; predicate: string } | null {
+  let inQuotes = false;
+  let quoteChar = '';
+  let parenDepth = 0;
+
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (!inQuotes && (ch === '"' || ch === '«')) {
+      inQuotes = true;
+      quoteChar = ch === '«' ? '»' : '"';
+      continue;
+    }
+    if (inQuotes && ch === quoteChar) {
+      inQuotes = false;
+      continue;
+    }
+    if (!inQuotes) {
+      const ch = expr[i];
+      if (!inQuotes && (ch === '(' || ch === '{')) {
+        parenDepth++;
+        continue;
+      }
+      if (!inQuotes && (ch === ')' || ch === '}')) {
+        parenDepth = Math.max(0, parenDepth - 1);
+        continue;
+      }
+      if (parenDepth === 0 && expr.slice(i, i + 7) === ' WHERE ') {
+        const ground = expr.slice(0, i).trim();
+        const predicate = expr.slice(i + 7).trim();
+        if (ground && predicate) {
+          return { ground, predicate };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Deler et uttrykk på toppnivå ALL-CAPS 'AND' (utenfor parenteser og anførselstegn).
  */
 export function splitTopLevelAnd(expr: string): string[] {
@@ -432,12 +508,12 @@ export function splitTopLevelAnd(expr: string): string[] {
       continue;
     }
     if (!inQuotes) {
-      if (ch === '(') {
+      if (ch === '(' || ch === '{') {
         parenDepth++;
         current += ch;
         continue;
       }
-      if (ch === ')') {
+      if (ch === ')' || ch === '}') {
         parenDepth = Math.max(0, parenDepth - 1);
         current += ch;
         continue;
@@ -490,30 +566,48 @@ function parseCnfGroups(
   }
 
   // 1. Sjekk om hele uttrykket er pakket i FTS5 NEAR(...)
+  // Støtter både NEAR(a b, 10) og NEAR(a, b, 10) samt +10 / asym
   const nearFuncMatch = working.match(/^NEAR\s*\(([\s\S]+)\)$/);
   if (nearFuncMatch) {
     usedExplicitSyntax = true;
-    let inner = nearFuncMatch[1].trim();
-    const parts = inner.split(',');
-    if (parts.length >= 2) {
-      const winRaw = parts[1].trim();
-      if (/^\+?\d+$/.test(winRaw)) {
-        effectiveWindow = clampWindow(parseInt(winRaw, 10));
-        if (winRaw.startsWith('+')) {
-          effectiveSymmetric = false;
-        }
+    const inner = nearFuncMatch[1].trim();
+    const parts = inner
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    const symTokens = [
+      'true',
+      'false',
+      'sym',
+      'asym',
+      'ordered',
+      '->',
+      '0',
+      '1',
+    ];
+    if (
+      parts.length >= 2 &&
+      symTokens.includes(parts[parts.length - 1].toLowerCase()) &&
+      /^\+?\d+$/.test(parts[parts.length - 2])
+    ) {
+      const symArg = parts.pop()!.toLowerCase();
+      if (['false', 'asym', 'ordered', '->', '0'].includes(symArg)) {
+        effectiveSymmetric = false;
+      } else if (['true', 'sym', '1'].includes(symArg)) {
+        effectiveSymmetric = true;
       }
-      if (parts.length === 3) {
-        const symArg = parts[2].trim().toLowerCase();
-        if (['false', 'asym', 'ordered', '->', '0'].includes(symArg)) {
-          effectiveSymmetric = false;
-        } else if (['true', 'sym', '1'].includes(symArg)) {
-          effectiveSymmetric = true;
-        }
-      }
-      inner = parts[0].trim();
     }
-    working = inner;
+
+    if (parts.length >= 2 && /^\+?\d+$/.test(parts[parts.length - 1])) {
+      const winRaw = parts.pop()!;
+      effectiveWindow = clampWindow(parseInt(winRaw, 10));
+      if (winRaw.startsWith('+')) {
+        effectiveSymmetric = false;
+      }
+    }
+
+    working = parts.join(' ');
   }
 
   // 2. Del opp i parentesgrupper (...) eller enkelt-tokens
@@ -725,7 +819,173 @@ export function parseSearchQuery(
     };
   }
 
-  // 0. Sjekk om uttrykket er sammensatt med toppnivå AND der minst ett ledd er NEAR(...) / "..."~N / frase
+  // 0a. Semijoin / Mengdebygger: <ground> WHERE <predikat>  eller  { ground | predikat }
+  // Venstresiden (ground) er objektet som telles og vises; høyresiden (predikat) er true/false-filter.
+  const setBuilderMatch = trimmed.match(/^\{\s*([^|{}]+?)\s*\|\s*([^{}]+?)\s*\}$/);
+  const normalizedWhereInput = setBuilderMatch
+    ? `${setBuilderMatch[1].trim()} WHERE ${setBuilderMatch[2].trim()}`
+    : trimmed;
+  const whereSplit = splitTopLevelWhere(normalizedWhereInput);
+  if (whereSplit) {
+    const rawGround = whereSplit.ground.replace(/^\^/, '').trim();
+    const rawPred = whereSplit.predicate.trim();
+    const predClauses = splitTopLevelAnd(rawPred);
+
+    // Spesialtilfelle: doc WHERE <predikat> ({ doc | predikat })
+    if (rawGround.toLowerCase() === 'doc') {
+      const subQueries = predClauses.map((p) =>
+        parseSearchQuery(p, windowSize, symmetric)
+      );
+      const firstErr = subQueries.find((sq) => sq.parseError);
+      if (firstErr) {
+        return { ...firstErr, raw: trimmed };
+      }
+      const primary = subQueries[subQueries.length - 1];
+      const filters = subQueries.slice(0, -1);
+      return {
+        ...primary,
+        raw: trimmed,
+        syntaxDialect: 'fts5',
+        parseError: null,
+        corpusFilterClauses: filters.length > 0 ? filters : undefined,
+        predictedModeLabel: `{doc | ${rawPred}} (dokumentfilter)`,
+      };
+    }
+
+    // Sjekk om et av AND-leddene i predikatet er et NEAR(...)-predikat som kan binde ground-termen som ^anker
+    let boundPrimary: ParsedQuery | null = null;
+    const docFilterClauses: ParsedQuery[] = [];
+
+    for (const clause of predClauses) {
+      const cTrim = clause.trim();
+      const isNearClause = /^NEAR\s*\(/i.test(cTrim) || /\bNEAR\/\d+\b/.test(cTrim);
+
+      if (isNearClause) {
+        const parsedClause = parseSearchQuery(cTrim, windowSize, symmetric);
+        if (parsedClause.parseError) {
+          return { ...parsedClause, raw: trimmed };
+        }
+        const bareGround = rawGround.replace(/^["«]|["»]$/g, '').trim();
+        const bareTerms = parsedClause.terms.map((t) =>
+          t.replace(/^\^/, '')
+        );
+        const matchIdx = bareTerms.findIndex(
+          (t) => t.toLowerCase() === bareGround.toLowerCase()
+        );
+
+        if (!boundPrimary) {
+          if (matchIdx !== -1) {
+            // Ground-ordet finnes inne i NEAR(a b c, 10) -> bind det som ^anker!
+            const anchoredTerms = bareTerms.map((t, idx) =>
+              idx === matchIdx ? `^${t}` : t
+            );
+            let anchoredGroups = parsedClause.termGroups;
+            if (anchoredGroups) {
+              anchoredGroups = anchoredGroups.map((g, idx) =>
+                idx === matchIdx
+                  ? g.map((w, wIdx) =>
+                      wIdx === 0 && !w.startsWith('^') ? `^${w}` : w
+                    )
+                  : g.map((w) => w.replace(/^\^/, ''))
+              );
+            }
+            boundPrimary = {
+              ...parsedClause,
+              terms: anchoredTerms,
+              termGroups: anchoredGroups,
+              anchorWord: bareTerms[matchIdx],
+              syntaxDialect: 'fts5',
+            };
+            continue;
+          } else if (bareTerms.length >= 1 && !/\s/.test(bareGround)) {
+            // Brukeren skrev kortformen: a WHERE NEAR(b, 10) -> sett inn ^a som første ledd i NEAR!
+            const anchoredTerms = [`^${bareGround}`, ...bareTerms];
+            const anchoredGroups = parsedClause.termGroups
+              ? [[`^${bareGround}`], ...parsedClause.termGroups]
+              : undefined;
+            boundPrimary = {
+              ...parsedClause,
+              terms: anchoredTerms,
+              termGroups: anchoredGroups,
+              anchorWord: bareGround,
+              canComparePairAnchor:
+                anchoredTerms.length >= 2 &&
+                anchoredTerms.length <= 5 &&
+                !parsedClause.hasWildcardOrGroup,
+              pairWords:
+                anchoredTerms.length >= 2 &&
+                anchoredTerms.length <= 5 &&
+                !parsedClause.hasWildcardOrGroup
+                  ? [bareGround, ...bareTerms]
+                  : null,
+              syntaxDialect: 'fts5',
+            };
+            continue;
+          }
+        } else if (
+          matchIdx !== -1 &&
+          parsedClause.window === boundPrimary.window &&
+          parsedClause.symmetric === boundPrimary.symmetric &&
+          !parsedClause.hasWildcardOrGroup &&
+          !boundPrimary.hasWildcardOrGroup
+        ) {
+          // Brukeren skrev a WHERE NEAR(a b, 10) AND NEAR(a c, 10) med samme anker og vindu
+          // -> slå sammen til NEAR(^a b c, 10) på samme ankerforekomst!
+          const extraTerms = bareTerms.filter(
+            (_, idx) => idx !== matchIdx
+          );
+          const prevPrimary: ParsedQuery = boundPrimary;
+          const mergedTerms: string[] = [...prevPrimary.terms];
+          for (const et of extraTerms) {
+            if (
+              !mergedTerms.some(
+                (mt: string) =>
+                  mt.replace(/^\^/, '').toLowerCase() === et.toLowerCase()
+              )
+            ) {
+              mergedTerms.push(et);
+            }
+          }
+          boundPrimary = {
+            ...prevPrimary,
+            terms: mergedTerms,
+            pairWords:
+              mergedTerms.length >= 2 && mergedTerms.length <= 5
+                ? mergedTerms.map((t: string) => t.replace(/^\^/, ''))
+                : null,
+          };
+          continue;
+        }
+      }
+
+      // Øvrige predikat-ledd er dokument-/korpusbetingelser
+      const parsedFilter = parseSearchQuery(cTrim, windowSize, symmetric);
+      if (parsedFilter.parseError) {
+        return { ...parsedFilter, raw: trimmed };
+      }
+      docFilterClauses.push(parsedFilter);
+    }
+
+    if (!boundPrimary) {
+      const parsedGround = parseSearchQuery(rawGround, windowSize, symmetric);
+      if (parsedGround.parseError) {
+        return { ...parsedGround, raw: trimmed };
+      }
+      boundPrimary = parsedGround;
+    }
+
+    return {
+      ...boundPrimary,
+      raw: trimmed,
+      syntaxDialect: 'fts5',
+      parseError: null,
+      corpusFilterClauses:
+        docFilterClauses.length > 0 ? docFilterClauses : undefined,
+      predictedModeLabel: `{${rawGround} | ${rawPred}}`,
+    };
+  }
+
+  // 0b. Sjekk om uttrykket er sammensatt med toppnivå AND der minst ett ledd er NEAR(...) / "..."~N / frase
   // f.eks. NEAR(a b, 5) AND NEAR(c d, 10) -> kjedes på korpus-/dokumentnivå via returnCorpus!
   const andParts = splitTopLevelAnd(trimmed);
   if (

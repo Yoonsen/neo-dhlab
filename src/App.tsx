@@ -217,6 +217,19 @@ export const App: React.FC = () => {
   );
 
   const activeDialect = useMemo(() => {
+    if (
+      allParsedList.some(
+        (p) =>
+          p.syntaxDialect === 'fts5' &&
+          (/\bWHERE\b/.test(p.raw) ||
+            /^\s*\{.+\|.+\}\s*$/.test(p.raw) ||
+            /\^\S+/.test(p.raw) ||
+            /,\s*\+\d+/.test(p.raw) ||
+            /,\s*(?:false|true|asym|sym|ordered|->)\s*\)/i.test(p.raw))
+      )
+    ) {
+      return 'FTS5+';
+    }
     if (allParsedList.some((p) => p.syntaxDialect === 'fts5')) return 'FTS5';
     if (allParsedList.some((p) => p.syntaxDialect === 'elastic')) return 'Elastic';
     return null;

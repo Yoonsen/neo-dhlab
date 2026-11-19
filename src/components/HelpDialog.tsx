@@ -185,6 +185,42 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
           <p>{t.helpSec3Desc}</p>
           <ul>
             <li>
+              <strong>
+                <code>WHERE</code> / <code>{'{ x | P(x) }'}</code>:
+              </strong>{' '}
+              <button
+                type="button"
+                className="btn-link-inline"
+                onClick={() =>
+                  tryExample('demokrati WHERE NEAR(demokrati diktatur, 10)')
+                }
+              >
+                <code>demokrati WHERE NEAR(demokrati diktatur, 10)</code>
+              </button>
+              ,{' '}
+              <button
+                type="button"
+                className="btn-link-inline"
+                onClick={() =>
+                  tryExample(
+                    'demokrati WHERE NEAR(demokrati diktatur krig, 10)'
+                  )
+                }
+              >
+                <code>demokrati WHERE NEAR(demokrati diktatur krig, 10)</code>
+              </button>
+              ,{' '}
+              <button
+                type="button"
+                className="btn-link-inline"
+                onClick={() =>
+                  tryExample('{demokrati | NEAR(demokrati diktatur, 10) AND krig}')
+                }
+              >
+                <code>{'{demokrati | NEAR(demokrati diktatur, 10) AND krig}'}</code>
+              </button>
+            </li>
+            <li>
               <strong>FTS5 <code>NEAR</code>:</strong>{' '}
               <button
                 type="button"
