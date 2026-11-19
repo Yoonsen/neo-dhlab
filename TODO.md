@@ -14,9 +14,13 @@ Når antall verktøy vokser utover dagens tre kjernefaner (*Telling*, *Konkordan
   - **Temamodellering (Topic Modeling):** Klynge- og temautforsking over det valgte korpuset basert på grunndata fra backend.
   - **Doc2Vec / Dokumentlikhet:** Finne bøker/tekster som ligner semantisk i vektorrommet, tilpasset fra eksisterende DHLAB-app og knyttet direkte til aktivt korpus (`corpusToken`).
 
-## 2. Semantikk og forankring i søkespråket
+## 2. Semantikk og forankring i søkespråket (`FTS5+`)
+- **Bindende vs. frie predikater under `WHERE` / `{ x | P(x) }` ($A \ltimes_{\text{skop}} B$):**
+  - `a WHERE NEAR(a b, 10) AND NEAR(a c, 10)`: `a` er bundet i begge predikatene, og evalueres mot samme posisjonsbitmaske $P_a \ \& \ \text{dilate}(P_b, 10) \ \& \ \text{dilate}(P_c, 10)$.
+  - Frie predikater (`... AND c` eller `doc WHERE ...` / `{doc | ...}`): Evalueres som $O(1)$ Roaring-maskering på dokumentnivå (`returnCorpus: true`) før posisjonsoperasjonene.
 - **Avsnitts- vs. dokumentforankring (`doc` vs. `para`):**
-  - Tydeliggjøre og utvide syntaksen for hvor et søkeuttrykk eller en boolsk kombinasjon (`NEAR(...) AND NEAR(...)`) er forankret (innenfor samme vindu, samme avsnitt eller samme bok).
-- **Videreutvikling av utvidet FTS5-dialekt:**
-  - `NEAR(a b, 10)` (symmetrisk), `NEAR(a b, +10)` / `NEAR(a b, 10, asym)` (forover), og `NEAR(a ^b, 10)` (forankret på `b`).
-  - Støtte for rikere kombinasjoner når backend åpner for flere anker- eller avsnittsoperatorer.
+  - Siden `para`-posisjonene $P_{\text{para}} = [p_0, p_1, \dots, p_m]$ partisjonerer dokumentets token-akse i disjunkte halvåpne intervaller $[p_i, p_{i+1})$, er både `a WHERE para(b)` og `para WHERE a AND b` en `searchsorted`-projeksjon ned på avsnittsindeksene $\{i \mid \exists x \in P_b : p_i \le x < p_{i+1}\}$.
+- **Vonnegut-buer direkte fra ankervektoren $P_{\text{resultat}}$:**
+  - Når ethvert `FTS5+`-uttrykk produserer en sortert vektor av ankerposisjoner $P_{\text{resultat}}$ (token-posisjoner for `^a`, avsnittsstart for `^para`, eller sidestart for `^page`), blir dispersjonsplottet gjennom boka en lineær normalisering $x / N_{\text{tokens}} \in [0, 1]$ (eller mot `page`-ankrene) plottet som tetthet (KDE / 100 bøtter) eller kumulativ kurve over bokas lengde.
+- **3+ ord i `/concordance_public`:**
+  - Åpne for 3+ ord i `near`-modus også i konkordansendepunktet.

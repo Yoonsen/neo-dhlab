@@ -605,6 +605,9 @@ function parseCnfGroups(
       if (winRaw.startsWith('+')) {
         effectiveSymmetric = false;
       }
+    } else {
+      // Standard FTS5 NEAR(a b) uten oppgitt tall har avstand 10
+      effectiveWindow = 10;
     }
 
     working = parts.join(' ');

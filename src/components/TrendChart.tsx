@@ -450,7 +450,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
               {years.map((y, idx) => {
                 const step = Math.max(1, Math.floor(years.length / 10));
-                if (idx % step !== 0 && idx !== years.length - 1) return null;
+                const isLast = idx === years.length - 1;
+                const isStep = idx % step === 0;
+                // Unngå at nest siste tikk og siste tikk (f.eks. 2020 og 2025) overlapper
+                if (!isStep && !isLast) return null;
+                if (isStep && !isLast && years.length - 1 - idx < Math.floor(step * 0.6)) {
+                  return null;
+                }
                 const x = getX(idx);
                 return (
                   <g key={y}>
