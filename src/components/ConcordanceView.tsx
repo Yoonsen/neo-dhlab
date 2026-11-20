@@ -1,5 +1,11 @@
 import React, { useId } from 'react';
-import { ConcordanceResponse, ParsedQuery } from '../api';
+import {
+  BookMetadataRow,
+  buildNbItemUrl,
+  ConcordanceResponse,
+  normalizeAuthorName,
+  ParsedQuery,
+} from '../api';
 import { downloadExcelFile } from '../excelExport';
 import { UiStrings } from '../i18n';
 
@@ -10,6 +16,7 @@ interface ConcordanceViewProps {
   parsedList: ParsedQuery[];
   onSelectParsed: (p: ParsedQuery) => void;
   data: ConcordanceResponse | null;
+  metadataById: Record<number, BookMetadataRow>;
   clientMs: number | null;
   loading: boolean;
   error: string | null;
@@ -18,6 +25,7 @@ interface ConcordanceViewProps {
   after: number;
   onOptionsChange: (opts: { limit: number; before: number; after: number }) => void;
   onFetch: () => void;
+  onOpenDispersionForBook: (dhlabid: number) => void;
 }
 
 export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
@@ -27,6 +35,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   parsedList,
   onSelectParsed,
   data,
+  metadataById,
   clientMs,
   loading,
   error,
@@ -35,6 +44,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   after,
   onOptionsChange,
   onFetch,
+  onOpenDispersionForBook,
 }) => {
   const captionId = useId();
   const limitSelectId = useId();
@@ -150,8 +160,22 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   const exportExcel = () => {
     if (!data || data.rows.length === 0) return;
     const matrix: (string | number)[][] = [
-      ['dhlabid', 'left', 'hit', 'right'],
-      ...data.rows.map((r) => [r.dhlabid, r.left, r.hit, r.right]),
+      ['dhlabid', 'urn', 'year', 'authors', 'title', 'left', 'hit', 'right', 'nb_url'],
+      ...data.rows.map((r) => {
+        const meta = metadataById[r.dhlabid];
+        const nbUrl = buildNbItemUrl(meta?.urn, parsed, r.hit) ?? '';
+        return [
+          r.dhlabid,
+          meta?.urn ?? '',
+          meta?.year ?? '',
+          normalizeAuthorName(meta?.authors),
+          meta?.title ?? '',
+          r.left,
+          r.hit,
+          r.right,
+          nbUrl,
+        ];
+      }),
     ];
     downloadExcelFile(
       `konkordans_${queryText.replace(/\s+/g, '_')}.xlsx`,
@@ -272,8 +296,8 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
             </caption>
             <thead>
               <tr>
-                <th scope="col" className="col-dhlabid">
-                  dhlabid
+                <th scope="col" className="col-book-meta">
+                  Bok (Nettbiblioteket)
                 </th>
                 <th scope="col" className="col-left">
                   {t.colLeft}
@@ -284,19 +308,71 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                 <th scope="col" className="col-right">
                   {t.colRight}
                 </th>
+                <th scope="col" className="col-arc">
+                  Bue
+                </th>
               </tr>
             </thead>
             <tbody>
               {data.rows.map((row, i) => {
                 const { leftNode, hitNode, rightNode } = renderSegmentedRow(row);
+                const meta = metadataById[row.dhlabid];
+                const nbUrl = buildNbItemUrl(meta?.urn, parsed, row.hit);
+                const author = normalizeAuthorName(meta?.authors);
+                const title = meta?.title?.trim() || `dhlabid ${row.dhlabid}`;
+                const year = meta?.year;
+                const fullTooltip = [
+                  title,
+                  author ? `Forfatter: ${author}` : '',
+                  year ? `År: ${year}` : '',
+                  meta?.urn ? `URN: ${meta.urn}` : `dhlabid: ${row.dhlabid}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+
                 return (
                   <tr key={`${row.dhlabid}-${i}`}>
-                    <th scope="row" className="col-dhlabid">
-                      <code>{row.dhlabid}</code>
+                    <th scope="row" className="col-book-meta" title={fullTooltip}>
+                      {nbUrl ? (
+                        <a
+                          href={nbUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="book-meta-link"
+                        >
+                          <span className="book-meta-title">{title}</span>
+                          <span className="book-meta-sub">
+                            {year ? `${year}` : ''}
+                            {year && author ? ' · ' : ''}
+                            {author || ''}
+                          </span>
+                        </a>
+                      ) : (
+                        <div className="book-meta-fallback">
+                          <span className="book-meta-title">{title}</span>
+                          {(year || author) && (
+                            <span className="book-meta-sub">
+                              {year ? `${year}` : ''}
+                              {year && author ? ' · ' : ''}
+                              {author || ''}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </th>
                     <td className="col-left">{leftNode}</td>
                     <td className="col-hit">{hitNode}</td>
                     <td className="col-right">{rightNode}</td>
+                    <td className="col-arc">
+                      <button
+                        type="button"
+                        className="btn-tiny arc-trigger-btn"
+                        title={`Vis Vonnegut-bue (narrativ bue) i «${title}»`}
+                        onClick={() => onOpenDispersionForBook(row.dhlabid)}
+                      >
+                        📈 Bue
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

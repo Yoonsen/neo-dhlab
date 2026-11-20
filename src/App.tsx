@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ActiveCorpus,
+  BookMetadataRow,
   buildNearQueryPayload,
   checkHealth,
   ConcordanceResponse,
   DEFAULT_BASE_URL,
   fetchConcordancePublic,
+  fetchMetadata,
   fetchNearCount,
   fetchYearTrend,
   HealthResponse,
@@ -15,12 +17,13 @@ import {
 } from './api';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
+import { DispersionView } from './components/DispersionView';
 import { HelpDialog } from './components/HelpDialog';
 import { CountSeriesItem, OverviewTab } from './components/OverviewTab';
 import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendChart';
 import { TRANSLATIONS, UI_LANG_OPTIONS, UiLang } from './i18n';
 
-type TabId = 'overview' | 'concordance' | 'trends';
+type TabId = 'overview' | 'concordance' | 'trends' | 'dispersion';
 
 const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
 const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
@@ -180,6 +183,21 @@ export const App: React.FC = () => {
     before: 10,
     after: 10,
   });
+
+  // Bibliografisk metadata-cache (dhlabid -> BookMetadataRow) + valgte bøker for narrativ bue
+  const [metadataById, setMetadataById] = useState<Record<number, BookMetadataRow>>({});
+  const [dispersionBookIds, setDispersionBookIds] = useState<number[]>([]);
+
+  const mergeMetadataRows = useCallback((rows: BookMetadataRow[]) => {
+    if (!rows || rows.length === 0) return;
+    setMetadataById((prev) => {
+      const next = { ...prev };
+      for (const r of rows) {
+        next[r.dhlabid] = { ...next[r.dhlabid], ...r };
+      }
+      return next;
+    });
+  }, []);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -395,6 +413,25 @@ export const App: React.FC = () => {
         );
         setConcData(data);
         setConcMs(clientMs + extraMs);
+
+        // Hent bibliografiske metadata for alle unike dhlabid i konkordansen i ett raskt kall
+        const uniqueIds = Array.from(new Set(data.rows.map((r) => r.dhlabid)));
+        if (uniqueIds.length > 0) {
+          fetchMetadata(
+            baseUrl,
+            {
+              dhlabids: uniqueIds.slice(0, 1000),
+              fields: ['urn', 'title', 'authors', 'year'],
+            },
+            signal
+          )
+            .then(({ data: metaRes }) => {
+              if (!signal.aborted && metaRes.rows) {
+                mergeMetadataRows(metaRes.rows);
+              }
+            })
+            .catch(() => {});
+        }
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
         setConcError(err instanceof Error ? err.message : String(err));
@@ -516,12 +553,14 @@ export const App: React.FC = () => {
     overview: null,
     concordance: null,
     trends: null,
+    dispersion: null,
   });
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: t.tabCounts },
     { id: 'concordance', label: t.tabConcordance },
     { id: 'trends', label: t.tabTrends },
+    { id: 'dispersion', label: 'Vonnegut-bue' },
   ];
 
   const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {
@@ -1010,6 +1049,7 @@ export const App: React.FC = () => {
                   void executeConcordanceSearch(p, concOptions, corpus);
                 }}
                 data={concData}
+                metadataById={metadataById}
                 clientMs={concMs}
                 loading={concLoading}
                 error={concError}
@@ -1021,6 +1061,14 @@ export const App: React.FC = () => {
                 onFetch={() =>
                   void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
                 }
+                onOpenDispersionForBook={(dhlabid) => {
+                  setDispersionBookIds((prev) =>
+                    prev.includes(dhlabid)
+                      ? prev
+                      : [dhlabid, ...prev].slice(0, 10)
+                  );
+                  setActiveTab('dispersion');
+                }}
               />
             </div>
           )}
@@ -1039,6 +1087,26 @@ export const App: React.FC = () => {
                 pendingQueries={pendingTrendQueries}
                 loading={trendLoading}
                 t={t}
+              />
+            </div>
+          )}
+
+          {activeTab === 'dispersion' && (
+            <div role="tabpanel" aria-labelledby="tab-dispersion">
+              <DispersionView
+                t={t}
+                baseUrl={baseUrl}
+                corpus={corpus}
+                parsedList={parsedList}
+                selectedBookIds={dispersionBookIds}
+                onSelectedBookIdsChange={setDispersionBookIds}
+                knownMetadata={metadataById}
+                onNewMetadata={mergeMetadataRows}
+                candidateBookIdsFromConcordance={
+                  concData
+                    ? Array.from(new Set(concData.rows.map((r) => r.dhlabid)))
+                    : []
+                }
               />
             </div>
           )}

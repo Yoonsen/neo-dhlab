@@ -3,6 +3,8 @@ import {
   ActiveCorpus,
   buildCorpusRequest,
   buildNearQueryPayload,
+  FacetValue,
+  fetchCorpusFacets,
   fetchNearCount,
   parseSearchQuery,
   splitTopLevelAnd,
@@ -45,16 +47,68 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const [customName, setCustomName] = useState<string>('');
   const [textFilter, setTextFilter] = useState<string>('');
   const [textWindow, setTextWindow] = useState<number>(5);
-  const [yearFrom, setYearFrom] = useState<string>('1850');
-  const [yearTo, setYearTo] = useState<string>('1950');
+  const [yearFrom, setYearFrom] = useState<string>('1800');
+  const [yearTo, setYearTo] = useState<string>('2026');
   const [lang, setLang] = useState<string>('');
   const [literaryForm, setLiteraryForm] = useState<string>('');
   const [authorPrefix, setAuthorPrefix] = useState<string>('');
+  const [authorExact, setAuthorExact] = useState<string>('');
+  const [authorSuggestions, setAuthorSuggestions] = useState<FacetValue[]>([]);
   const [subjectPrefix, setSubjectPrefix] = useState<string>('');
+  const [subjectExact, setSubjectExact] = useState<string>('');
+  const [subjectSuggestions, setSubjectSuggestions] = useState<FacetValue[]>([]);
   const [rawIdsText, setRawIdsText] = useState<string>('');
 
   const [building, setBuilding] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Autofullføring for forfatter etter 2+ tegn
+  useEffect(() => {
+    const q = authorPrefix.trim();
+    if (!open || q.length < 2 || q === authorExact) {
+      setAuthorSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const cap = q.charAt(0).toUpperCase() + q.slice(1);
+      fetchCorpusFacets(baseUrl, { k: 'authors', prefix: cap, limit: 12 })
+        .then(({ data }) => {
+          if (!cancelled) setAuthorSuggestions(data.values ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setAuthorSuggestions([]);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authorExact, authorPrefix, baseUrl, open]);
+
+  // Autofullføring for emne etter 2+ tegn
+  useEffect(() => {
+    const q = subjectPrefix.trim();
+    if (!open || q.length < 2 || q === subjectExact) {
+      setSubjectSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const cap = q.charAt(0).toUpperCase() + q.slice(1);
+      fetchCorpusFacets(baseUrl, { k: 'subjects', prefix: cap, limit: 12 })
+        .then(({ data }) => {
+          if (!cancelled) setSubjectSuggestions(data.values ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setSubjectSuggestions([]);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [baseUrl, open, subjectExact, subjectPrefix]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -162,12 +216,26 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
         labels.push(literaryForm);
       }
       if (authorPrefix.trim()) {
-        nodes.push({ k: 'authors', prefix: authorPrefix.trim() });
-        labels.push(`forfatter:${authorPrefix.trim()}*`);
+        const rawA = authorPrefix.trim();
+        if (authorExact && rawA === authorExact) {
+          nodes.push({ k: 'authors', v: authorExact });
+          labels.push(`forfatter:${authorExact}`);
+        } else {
+          const capA = rawA.charAt(0).toUpperCase() + rawA.slice(1);
+          nodes.push({ k: 'authors', prefix: capA });
+          labels.push(`forfatter:${capA}*`);
+        }
       }
       if (subjectPrefix.trim()) {
-        nodes.push({ k: 'subjects', prefix: subjectPrefix.trim() });
-        labels.push(`emne:${subjectPrefix.trim()}*`);
+        const rawS = subjectPrefix.trim();
+        if (subjectExact && rawS === subjectExact) {
+          nodes.push({ k: 'subjects', v: subjectExact });
+          labels.push(`emne:${subjectExact}`);
+        } else {
+          const capS = rawS.charAt(0).toUpperCase() + rawS.slice(1);
+          nodes.push({ k: 'subjects', prefix: capS });
+          labels.push(`emne:${capS}*`);
+        }
       }
 
       let metaCorpusToken: string | null = null;
@@ -384,7 +452,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearFrom}
-              placeholder="1850"
+              placeholder="1800"
               onChange={(e) => setYearFrom(e.target.value)}
             />
           </div>
@@ -395,7 +463,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearTo}
-              placeholder="1950"
+              placeholder="2026"
               onChange={(e) => setYearTo(e.target.value)}
             />
           </div>
@@ -427,20 +495,42 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               <option value="Uklassifisert">Uklassifisert</option>
             </select>
           </div>
-          <div className="field-stack">
+          <div className="field-stack" style={{ position: 'relative' }}>
             <label htmlFor={authorInputId}>{t.authorLabel}</label>
             <input
               id={authorInputId}
               type="text"
               value={authorPrefix}
-              placeholder="Ibsen / Hamsun"
+              placeholder="Fosse / Ibsen / Hamsun"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
-              onChange={(e) => setAuthorPrefix(e.target.value)}
+              onChange={(e) => {
+                setAuthorPrefix(e.target.value);
+                setAuthorExact('');
+              }}
             />
+            {authorSuggestions.length > 0 && (
+              <div className="facet-suggest-list" role="listbox" aria-label="Forfatterforslag">
+                {authorSuggestions.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className="facet-suggest-item"
+                    onClick={() => {
+                      setAuthorPrefix(f.value);
+                      setAuthorExact(f.value);
+                      setAuthorSuggestions([]);
+                    }}
+                  >
+                    <span>{f.value}</span>
+                    <span className="muted">({f.docs.toLocaleString('nb-NO')})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="field-stack">
+          <div className="field-stack" style={{ position: 'relative' }}>
             <label htmlFor={subjectInputId}>{t.subjectLabel}</label>
             <input
               id={subjectInputId}
@@ -450,8 +540,30 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
-              onChange={(e) => setSubjectPrefix(e.target.value)}
+              onChange={(e) => {
+                setSubjectPrefix(e.target.value);
+                setSubjectExact('');
+              }}
             />
+            {subjectSuggestions.length > 0 && (
+              <div className="facet-suggest-list" role="listbox" aria-label="Emneforslag">
+                {subjectSuggestions.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className="facet-suggest-item"
+                    onClick={() => {
+                      setSubjectPrefix(f.value);
+                      setSubjectExact(f.value);
+                      setSubjectSuggestions([]);
+                    }}
+                  >
+                    <span>{f.value}</span>
+                    <span className="muted">({f.docs.toLocaleString('nb-NO')})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

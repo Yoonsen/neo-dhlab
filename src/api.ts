@@ -62,6 +62,43 @@ export interface ConcordanceResponse {
   books: number;
 }
 
+export interface BookMetadataRow {
+  dhlabid: number;
+  urn?: string;
+  title?: string;
+  authors?: string;
+  year?: number;
+  publisher?: string;
+  city?: string;
+  langs?: string;
+  subjects?: string;
+  ddc?: string;
+  genres?: string;
+  literaryform?: string;
+  doctype?: string;
+}
+
+export interface MetadataResponse {
+  fields: string[];
+  rows: BookMetadataRow[];
+  missing: number[];
+}
+
+export interface DispersionBookResult {
+  dhlabid: number;
+  tokens: number;
+  counts: number[][];
+}
+
+export interface DispersionResponse {
+  labels: string[];
+  window: number | null;
+  bins: number | null;
+  books: DispersionBookResult[];
+  missing: number[];
+  total?: number[][];
+}
+
 export interface CorpusResponse {
   corpusToken: string;
   size: number;
@@ -111,24 +148,62 @@ export interface SearchLogEntry {
   payload: Record<string, unknown>;
 }
 
+const ESC_MAP: Record<string, string> = {
+  ',': '\uE001',
+  '(': '\uE002',
+  ')': '\uE003',
+  '{': '\uE004',
+  '}': '\uE005',
+  '|': '\uE006',
+  '+': '\uE007',
+  '"': '\uE008',
+  '~': '\uE009',
+  '^': '\uE00A',
+  '*': '\uE00B',
+  '\\': '\uE00C',
+};
+
+const UNESC_REGEX = /[\uE001-\uE00C]/g;
+const UNESC_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(ESC_MAP).map(([k, v]) => [v, k])
+);
+
+/**
+ * Erstatter backslash-escapede spesialtegn (\, \( \) \{ \} \| \+ \" \~ \^ \* \\)
+ * med interne plassholdere før syntaksparsing, slik at de behandles som vanlige tegn/ord.
+ */
+export function encodeEscapedChars(input: string): string {
+  let out = '';
+  for (let i = 0; i < input.length; i++) {
+    if (input[i] === '\\' && i + 1 < input.length) {
+      const next = input[i + 1];
+      out += ESC_MAP[next] ?? next;
+      i++;
+    } else {
+      out += input[i];
+    }
+  }
+  return out;
+}
+
+export function decodeEscapedChars(input: string): string {
+  return input.replace(UNESC_REGEX, (m) => UNESC_MAP[m] ?? m);
+}
+
 /**
  * Deler søkestrengen på komma utenfor anførselstegn ("..." / «...») og utenfor parenteser NEAR(..., 10).
- * Støtter \, (backslash-komma) dersom man vil søke på selve kommategnet.
+ * Støtter \, (backslash-komma) og andre \-escapede spesialtegn (\(, \), \|, \+, \^, \*).
  */
 export function splitSearchExpressions(rawInput: string): string[] {
+  const encoded = encodeEscapedChars(rawInput);
   const parts: string[] = [];
   let current = '';
   let inQuotes = false;
   let quoteChar = '';
   let parenDepth = 0;
 
-  for (let i = 0; i < rawInput.length; i++) {
-    const ch = rawInput[i];
-    if (ch === '\\' && i + 1 < rawInput.length && rawInput[i + 1] === ',') {
-      current += ',';
-      i++;
-      continue;
-    }
+  for (let i = 0; i < encoded.length; i++) {
+    const ch = encoded[i];
     if (!inQuotes && (ch === '"' || ch === '«')) {
       inQuotes = true;
       quoteChar = ch === '«' ? '»' : '"';
@@ -787,7 +862,8 @@ export function parseSearchQuery(
   windowSize: number,
   symmetric: boolean
 ): ParsedQuery {
-  const trimmed = rawInput.trim();
+  const displayRaw = decodeEscapedChars(rawInput.trim());
+  const trimmed = encodeEscapedChars(rawInput.trim());
   if (!trimmed) {
     return {
       raw: '',
@@ -809,7 +885,7 @@ export function parseSearchQuery(
   const { dialect, error: dialectError } = detectAndValidateDialect(trimmed);
   if (dialectError) {
     return {
-      raw: trimmed,
+      raw: displayRaw,
       terms: [],
       matchMode: 'near',
       window: windowSize,
@@ -982,12 +1058,12 @@ export function parseSearchQuery(
 
     return {
       ...boundPrimary,
-      raw: trimmed,
+      raw: displayRaw,
       syntaxDialect: 'fts5',
       parseError: null,
       corpusFilterClauses:
         docFilterClauses.length > 0 ? docFilterClauses : undefined,
-      predictedModeLabel: `{${rawGround} | ${rawPred}}`,
+      predictedModeLabel: decodeEscapedChars(`{${rawGround} | ${rawPred}}`),
     };
   }
 
@@ -1012,7 +1088,7 @@ export function parseSearchQuery(
     if (firstErr) {
       return {
         ...firstErr,
-        raw: trimmed,
+        raw: displayRaw,
       };
     }
     // Sjekk at alle ledd i AND-kjeden bruker kompatibel dialekt (ikke blander FTS5 og Elastic)
@@ -1023,7 +1099,7 @@ export function parseSearchQuery(
         'Syntaksfeil: Kan ikke blande FTS5-ledd og Elastic-ledd i samme AND-uttrykk.';
       return {
         ...subQueries[0],
-        raw: trimmed,
+        raw: displayRaw,
         terms: [],
         predictedModeLabel: mixErr,
         parseError: mixErr,
@@ -1042,7 +1118,7 @@ export function parseSearchQuery(
     const filters = subQueries.filter((_, idx) => idx !== primaryIdx);
     return {
       ...primary,
-      raw: trimmed,
+      raw: displayRaw,
       syntaxDialect: hasFtsSub ? 'fts5' : hasElSub ? 'elastic' : primary.syntaxDialect,
       parseError: null,
       corpusFilterClauses: filters,
@@ -1060,7 +1136,7 @@ export function parseSearchQuery(
     const innerParsed = parseSearchQuery(inner, explicitWin, symmetric);
     return {
       ...innerParsed,
-      raw: trimmed,
+      raw: displayRaw,
       syntaxDialect: 'elastic',
       predictedModeLabel: `Elastic nærhet (~${explicitWin}): ${innerParsed.terms.join(' · ')}`,
     };
@@ -1085,14 +1161,20 @@ export function parseSearchQuery(
     );
     const hasWildcardOrGroup = hasPhraseOr || hasPhraseWildcard;
     const cleanTerms = phraseGroups.map((g) =>
-      g[0].startsWith('^') && g[0].length > 1 ? g[0].slice(1) : g[0]
+      decodeEscapedChars(
+        g[0].startsWith('^') && g[0].length > 1 ? g[0].slice(1) : g[0]
+      )
     );
     return {
-      raw: trimmed,
+      raw: displayRaw,
       terms: cleanTerms,
       termGroups: hasWildcardOrGroup
         ? phraseGroups.map((g) =>
-            g.map((w) => (w.startsWith('^') && w.length > 1 ? w.slice(1) : w))
+            g.map((w) =>
+              decodeEscapedChars(
+                w.startsWith('^') && w.length > 1 ? w.slice(1) : w
+              )
+            )
           )
         : undefined,
       matchMode: 'sequence',
@@ -1111,15 +1193,17 @@ export function parseSearchQuery(
 
   // 3. Parse CNF-grupper (håndterer vanlig syntaks, FTS5 NEAR/OR/AND, Elastic og NB N-gram)
   const {
-    groups,
+    groups: rawGroups,
     effectiveWindow,
     effectiveSymmetric,
     usedExplicitSyntax,
   } = parseCnfGroups(trimmed, windowSize, symmetric);
 
+  const groups = rawGroups.map((g) => g.map((w) => decodeEscapedChars(w)));
+
   if (groups.length === 0) {
     return {
-      raw: trimmed,
+      raw: displayRaw,
       terms: [],
       matchMode: 'near',
       window: effectiveWindow,
@@ -1136,17 +1220,19 @@ export function parseSearchQuery(
   }
 
   const hasOrGroup = groups.some((g) => g.length > 1);
-  const hasWildcard = groups.some((g) => g.some((w) => w.includes('*')));
+  const hasWildcard = rawGroups.some((g) => g.some((w) => w.includes('*')));
   const hasWildcardOrGroup = hasOrGroup || hasWildcard;
 
   // Flate terms (første ord i hver gruppe hvis ikke OR brukes)
   const flatTerms = groups.map((g) => g[0]);
 
   let anchorWord: string | null = null;
-  for (const g of groups) {
-    for (const tok of g) {
+  for (let gIdx = 0; gIdx < rawGroups.length; gIdx++) {
+    const rg = rawGroups[gIdx];
+    for (let tIdx = 0; tIdx < rg.length; tIdx++) {
+      const tok = rg[tIdx];
       if (tok.startsWith('^') && tok.length > 1) {
-        anchorWord = tok.slice(1);
+        anchorWord = decodeEscapedChars(tok.slice(1));
         break;
       }
     }
@@ -1194,7 +1280,7 @@ export function parseSearchQuery(
   const pairWords: string[] | null = canComparePairAnchor ? bareWords : null;
 
   return {
-    raw: trimmed,
+    raw: displayRaw,
     terms: flatTerms,
     termGroups: hasWildcardOrGroup ? groups : undefined,
     matchMode: 'near',
@@ -1457,6 +1543,117 @@ export async function fetchCorpusFacets(
   }
 ): Promise<{ data: FacetResponse; clientMs: number }> {
   return timedPost<FacetResponse>(baseUrl, '/corpus/facets', req);
+}
+
+export async function fetchMetadata(
+  baseUrl: string,
+  req: {
+    dhlabids?: number[];
+    corpusToken?: string;
+    fields?: string[];
+  },
+  signal?: AbortSignal
+): Promise<{ data: MetadataResponse; clientMs: number }> {
+  return timedPost<MetadataResponse>(
+    baseUrl,
+    '/metadata',
+    {
+      ...req,
+      fields: req.fields ?? ['urn', 'title', 'authors', 'year'],
+    },
+    signal
+  );
+}
+
+export async function fetchDispersion(
+  baseUrl: string,
+  req: {
+    dhlabids?: number[];
+    corpusToken?: string;
+    terms?: string[];
+    termGroups?: string[][];
+    maxVariants?: number;
+    window?: number;
+    bins?: number;
+  },
+  signal?: AbortSignal
+): Promise<{ data: DispersionResponse; clientMs: number }> {
+  return timedPost<DispersionResponse>(baseUrl, '/dispersion', req, signal);
+}
+
+/**
+ * Normaliserer forfatternavn fra metadata (fjerner ekstra mellomrom før komma og ledende/etterfølgende '/').
+ */
+export function normalizeAuthorName(rawAuthor?: string): string {
+  if (!rawAuthor) return '';
+  return rawAuthor
+    .replace(/^\s*\/\s*|\s*\/\s*$/g, '')
+    .replace(/\s+,/g, ',')
+    .replace(/\s*\/\s*/g, ' / ')
+    .trim();
+}
+
+/**
+ * Oversetter et ParsedQuery til Nettbibliotekets searchText-parameter (Elastic / Lucene-format)
+ * så langt det lar seg gjøre, slik at klikk på boklenken åpner boka med søkeordene markert.
+ */
+export function buildNbSearchText(
+  parsed: ParsedQuery,
+  fallbackHit?: string
+): string {
+  const cleanWord = (w: string) => w.replace(/^\^/, '').trim();
+  const groups =
+    parsed.termGroups && parsed.termGroups.length > 0
+      ? parsed.termGroups.map((g) => g.map(cleanWord).filter(Boolean))
+      : parsed.terms.map((t) => [cleanWord(t)]).filter((g) => g[0]);
+
+  if (groups.length === 0) {
+    return fallbackHit ? fallbackHit.trim() : '';
+  }
+
+  // Eksakt frase: "i forhold til"
+  if (parsed.matchMode === 'sequence') {
+    const flat = groups.map((g) => g[0]);
+    return `"${flat.join(' ')}"`;
+  }
+
+  // Enkeltord eller én OR-gruppe
+  if (groups.length === 1) {
+    const g = groups[0];
+    if (g.length === 1) return g[0];
+    return g.join(' OR ');
+  }
+
+  // Flere ord utan OR-grupper -> Elastic nærhetssøk "ord1 ord2"~window
+  const allSingle = groups.every((g) => g.length === 1 && !g[0].includes('*'));
+  if (allSingle) {
+    const words = groups.map((g) => g[0]);
+    return `"${words.join(' ')}"~${parsed.window}`;
+  }
+
+  // Hvis det er OR-grupper eller wildcards i nærhet, send første ord fra hver gruppe i ~window
+  const primaryWords = groups.map((g) => g[0]);
+  return `"${primaryWords.join(' ')}"~${parsed.window}`;
+}
+
+export function buildNbItemUrl(
+  urn: string | undefined,
+  parsed: ParsedQuery,
+  fallbackHit?: string
+): string | null {
+  if (!urn) return null;
+  const cleanUrn = urn.startsWith('URN:')
+    ? urn
+    : urn.startsWith('digibok_')
+    ? `URN:NBN:no-nb_${urn}`
+    : /^\d{13}$/.test(urn)
+    ? `URN:NBN:no-nb_digibok_${urn}`
+    : urn;
+  const searchText = buildNbSearchText(parsed, fallbackHit);
+  const base = `https://www.nb.no/items/${encodeURIComponent(cleanUrn)}`;
+  return searchText
+    ? `${base}?searchText=${encodeURIComponent(searchText)}`
+    : base;
 }
 
 export function describeCountMode(
