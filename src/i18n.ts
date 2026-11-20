@@ -3,10 +3,6 @@ export type UiLang = 'no' | 'en' | 'fr' | 'de' | 'es' | 'it';
 export const UI_LANG_OPTIONS: { code: UiLang; label: string; short: string }[] = [
   { code: 'no', label: 'Norsk', short: 'NO' },
   { code: 'en', label: 'English', short: 'EN' },
-  { code: 'fr', label: 'Français', short: 'FR' },
-  { code: 'de', label: 'Deutsch', short: 'DE' },
-  { code: 'es', label: 'Español', short: 'ES' },
-  { code: 'it', label: 'Italiano', short: 'IT' },
 ];
 
 export interface UiStrings {

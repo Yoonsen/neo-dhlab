@@ -172,7 +172,24 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
                     </button>
                   </td>
                   <td>
-                    <code>termGroups</code> / <code>demokrati*</code>
+                    <code>termGroups</code> / <code>demokrati*</code> /{' '}
+                    <code>"i forhold|forbindelse til"</code>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Tegn / Escape (<code>\</code>)</th>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn-link-inline"
+                      onClick={() => tryExample('., \\,')}
+                    >
+                      <code>., \,</code>
+                    </button>
+                  </td>
+                  <td>
+                    <code>\,</code> (komma), <code>\(</code>, <code>\)</code>,{' '}
+                    <code>\|</code>, <code>\^</code>, <code>\*</code>
                   </td>
                 </tr>
               </tbody>
@@ -291,6 +308,37 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
             </li>
             <li>
               <strong>{t.metricIntensity}:</strong> <code>total / docs</code>
+            </li>
+          </ul>
+        </section>
+
+        <section className="help-section">
+          <h3>5. Konkordans og Vonnegut-bue (Narrativ bue)</h3>
+          <ul>
+            <li>
+              <strong>Fargemerket Konkordans & Nettbiblioteket:</strong> Støtter
+              1–5 ord, OR-grupper (<code>skib|skip</code>), wildcards (
+              <code>demokrati*</code>) og OR i fraser (
+              <code>"i forhold|forbindelse til"</code>). Ankerordet (
+              <code>^</code>) og hvert partnerledd får egen farge i linja. Klikk
+              på boktittelen for å åpne boka direkte i Nettbiblioteket med
+              søkeordene markert.
+            </li>
+            <li>
+              <strong>Vonnegut-bue (<code>/dispersion</code>):</strong> Klikk{' '}
+              <strong>📈 Bue</strong> på en konkordansrad (eller åpne fanen{' '}
+              <strong>Vonnegut-bue</strong>) for å plotte hvordan søkeordene
+              eller tegnene (f.eks. <code>., \,</code>) fordeler seg gjennom
+              bokas tekstforløp (0–100 % eller faste ordvinduer). Velg opptil 10
+              bøker for å sammenligne et forfatterskap etter hverandre, under
+              hverandre eller summert oppå hverandre.
+            </li>
+            <li>
+              <strong>Kurvestil & eksport:</strong> Både i{' '}
+              <strong>Trender</strong> og <strong>Vonnegut-bue</strong> kan du
+              justere linjetykkelse, gjennomsiktighet (alpha) og fyll under
+              kurve via <strong>Kurvestil ▾</strong>, og laste ned høyoppløselig{' '}
+              <strong>PNG</strong> eller <strong>Excel (.xlsx)</strong>.
             </li>
           </ul>
           <p className="muted" style={{ fontSize: '0.82rem', marginBlockEnd: 0 }}>
