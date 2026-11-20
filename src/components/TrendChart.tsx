@@ -44,10 +44,16 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const tableCaptionId = useId();
   const metricGroupName = useId();
   const smoothSelectId = useId();
+  const strokeWidthSliderId = useId();
+  const strokeAlphaSliderId = useId();
 
   const [metric, setMetric] = useState<MetricType>('perMillion');
   const [smoothing, setSmoothing] = useState<number>(5);
   const [showNumbers, setShowNumbers] = useState<boolean>(false);
+  const [showStyleBox, setShowStyleBox] = useState<boolean>(false);
+  const [lineWidth, setLineWidth] = useState<number>(2.4);
+  const [lineAlpha, setLineAlpha] = useState<number>(0.92);
+  const [fillArea, setFillArea] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const years = useMemo(() => {
@@ -199,27 +205,153 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     downloadExcelFile(`trender_${safeName}.xlsx`, matrix);
   };
 
-  const exportCsv = () => {
+  const exportPng = () => {
     if (computedSeries.length === 0 || years.length === 0) return;
-    const matrix = buildExportMatrix();
-    const csv = matrix
-      .map((row) =>
-        row
-          .map((cell) =>
-            typeof cell === 'string' && cell.includes(',')
-              ? `"${cell.replace(/"/g, '""')}"`
-              : String(cell)
-          )
-          .join(',')
-      )
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trender_${computedSeries.map((s) => s.query).join('_')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+
+    const scale = 2; // 2x Retina-oppløsning (1840px bred)
+    const legendHeight = 36 + Math.ceil(computedSeries.length / 2) * 24;
+    const totalH = height + legendHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = totalH * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.scale(scale, scale);
+
+    // Hent aktive temafarger fra rot-elementet
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bgSurface = rootStyle.getPropertyValue('--surface').trim() || '#ffffff';
+    const textMain = rootStyle.getPropertyValue('--text').trim() || '#1e1c1a';
+    const textMuted = rootStyle.getPropertyValue('--text-muted').trim() || '#615b53';
+    const borderSubtle =
+      rootStyle.getPropertyValue('--border-subtle').trim() || '#e4ded5';
+
+    // Bakgrunn
+    ctx.fillStyle = bgSurface;
+    ctx.fillRect(0, 0, width, totalH);
+
+    // Topptekst / Legend i PNG
+    ctx.font = '600 12px "IBM Plex Sans", system-ui, sans-serif';
+    let lx = padLeft;
+    let ly = 22;
+    for (const s of computedSeries) {
+      const label = `${s.query} (${s.totalHits.toLocaleString('nb-NO')} treff · ${s.totalDocs.toLocaleString('nb-NO')} bøker)`;
+      const textW = ctx.measureText(label).width + 28;
+      if (lx + textW > width - padRight && lx > padLeft) {
+        lx = padLeft;
+        ly += 22;
+      }
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(lx + 5, ly - 4, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = textMain;
+      ctx.fillText(label, lx + 15, ly);
+      lx += textW;
+    }
+
+    ctx.save();
+    ctx.translate(0, legendHeight);
+
+    // Horisontale rutenettlinjer og Y-etiketter
+    ctx.font = '11px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    yTicks.forEach((tVal, idx) => {
+      const y = getY(tVal);
+      ctx.strokeStyle = borderSubtle;
+      ctx.lineWidth = 1;
+      if (idx > 0) ctx.setLineDash([4, 4]);
+      else ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(width - padRight, y);
+      ctx.stroke();
+
+      ctx.fillStyle = textMuted;
+      const yLabel =
+        metric === 'total'
+          ? Math.round(tVal).toLocaleString('nb-NO')
+          : metric === 'cohort' || metric === 'docShare'
+          ? `${tVal.toFixed(0)} %`
+          : tVal.toFixed(tVal >= 10 ? 1 : 2);
+      ctx.fillText(yLabel, padLeft - 8, y + 4);
+    });
+    ctx.setLineDash([]);
+
+    // X-aksetikker
+    ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(years.length / 10));
+    years.forEach((yr, idx) => {
+      const isLast = idx === years.length - 1;
+      const isStep = idx % step === 0;
+      if (!isStep && !isLast) return;
+      if (isStep && !isLast && years.length - 1 - idx < Math.floor(step * 0.6)) {
+        return;
+      }
+      const x = getX(idx);
+      ctx.strokeStyle = textMuted;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, padTop + plotH);
+      ctx.lineTo(x, padTop + plotH + 6);
+      ctx.stroke();
+
+      ctx.fillStyle = textMuted;
+      ctx.fillText(String(yr), x, height - 10);
+    });
+
+    // Kurver (og evt. flatefyll)
+    for (const s of computedSeries) {
+      if (s.values.length === 0) continue;
+      if (fillArea) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.4, lineAlpha * 0.22);
+        ctx.fillStyle = s.color;
+        ctx.beginPath();
+        ctx.moveTo(getX(0), padTop + plotH);
+        s.values.forEach((v, i) => {
+          ctx.lineTo(getX(i), getY(v));
+        });
+        ctx.lineTo(getX(s.values.length - 1), padTop + plotH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.globalAlpha = lineAlpha;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      s.values.forEach((v, i) => {
+        const x = getX(i);
+        const y = getY(v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = computedSeries
+        .map((s) => s.query.replace(/[^\wæøåÆØÅ-]+/g, '_'))
+        .join('_')
+        .slice(0, 60);
+      a.href = url;
+      a.download = `trend_${safeName || 'dhlab'}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
   };
 
   // SVG dimensions
@@ -351,10 +483,31 @@ export const TrendChart: React.FC<TrendChartProps> = ({
           <button
             type="button"
             className="btn-secondary"
+            aria-expanded={showStyleBox}
+            onClick={() => setShowStyleBox((v) => !v)}
+            disabled={computedSeries.length === 0}
+            title="Juster linjetykkelse, gjennomsiktighet (alpha) og fyll"
+          >
+            Kurvestil ▾
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
             onClick={() => setShowNumbers((v) => !v)}
             disabled={computedSeries.length === 0}
           >
             {showNumbers ? t.hideNumbers : t.showNumbers}
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={exportPng}
+            disabled={computedSeries.length === 0 || years.length === 0}
+            title="Last ned høyoppløselig PNG av grafen"
+          >
+            PNG
           </button>
 
           <button
@@ -365,17 +518,64 @@ export const TrendChart: React.FC<TrendChartProps> = ({
           >
             Excel (.xlsx)
           </button>
+        </div>
+      </div>
+
+      {showStyleBox && computedSeries.length > 0 && (
+        <div className="curve-style-toolbox" role="region" aria-label="Kurvestil">
+          <div className="slider-wrap">
+            <label htmlFor={strokeWidthSliderId}>
+              Tykkelse: <strong>{lineWidth.toFixed(1)} px</strong>
+            </label>
+            <input
+              id={strokeWidthSliderId}
+              type="range"
+              min={0.8}
+              max={6}
+              step={0.2}
+              value={lineWidth}
+              onChange={(e) => setLineWidth(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="slider-wrap">
+            <label htmlFor={strokeAlphaSliderId}>
+              Alpha (dekkevne): <strong>{Math.round(lineAlpha * 100)} %</strong>
+            </label>
+            <input
+              id={strokeAlphaSliderId}
+              type="range"
+              min={0.15}
+              max={1}
+              step={0.05}
+              value={lineAlpha}
+              onChange={(e) => setLineAlpha(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="checkbox-inline">
+            <input
+              id={`${strokeAlphaSliderId}-fill`}
+              type="checkbox"
+              checked={fillArea}
+              onChange={(e) => setFillArea(e.target.checked)}
+            />
+            <label htmlFor={`${strokeAlphaSliderId}-fill`}>Fyll under kurve</label>
+          </div>
 
           <button
             type="button"
-            className="btn-secondary"
-            onClick={exportCsv}
-            disabled={computedSeries.length === 0 || years.length === 0}
+            className="btn-tiny"
+            onClick={() => {
+              setLineWidth(2.4);
+              setLineAlpha(0.92);
+              setFillArea(false);
+            }}
           >
-            CSV
+            Nullstill
           </button>
         </div>
-      </div>
+      )}
 
       {/* Legend cards */}
       <div className="series-legend-row" role="status" aria-live="polite">
@@ -480,22 +680,39 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               })}
 
               {computedSeries.map((s) => {
+                if (s.values.length === 0) return null;
                 const linePath = s.values
                   .map(
                     (v, i) =>
                       `${i === 0 ? 'M' : 'L'}${getX(i).toFixed(1)},${getY(v).toFixed(1)}`
                   )
                   .join(' ');
+                const areaPath = fillArea
+                  ? `${linePath} L${getX(s.values.length - 1).toFixed(1)},${(
+                      padTop + plotH
+                    ).toFixed(1)} L${getX(0).toFixed(1)},${(
+                      padTop + plotH
+                    ).toFixed(1)} Z`
+                  : '';
                 return (
-                  <path
-                    key={s.query}
-                    d={linePath}
-                    fill="none"
-                    stroke={s.color}
-                    strokeWidth="2.4"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
+                  <g key={s.query}>
+                    {fillArea && (
+                      <path
+                        d={areaPath}
+                        fill={s.color}
+                        fillOpacity={Math.min(0.4, lineAlpha * 0.22)}
+                      />
+                    )}
+                    <path
+                      d={linePath}
+                      fill="none"
+                      stroke={s.color}
+                      strokeWidth={lineWidth}
+                      strokeOpacity={lineAlpha}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                    />
+                  </g>
                 );
               })}
 
