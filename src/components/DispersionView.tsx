@@ -1,9 +1,10 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ActiveCorpus,
   BookMetadataRow,
   buildCorpusRequest,
   buildNbItemUrl,
+  DispersionBookResult,
   DispersionResponse,
   fetchDispersion,
   fetchMetadata,
@@ -67,6 +68,11 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
   const [authorSearchBooks, setAuthorSearchBooks] = useState<BookMetadataRow[]>([]);
   const [bookSearchText, setBookSearchText] = useState<string>('');
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  // Per-bok cache for /dispersion slik at vi aldri henter allerede beregnede bøker på nytt når man legger til/fjerner en bok!
+  const bookDispCacheRef = useRef<
+    Map<string, { labels: string[]; window: number | null; bins: number | null; book: DispersionBookResult }>
+  >(new Map());
 
   // Trekk ut opptil 10 søkeord / OR-grupper fra alle uttrykkene i søkefeltet
   const dispersionGroups = useMemo(() => {
@@ -179,12 +185,63 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
     });
   }, [knownMetadata, selectedBookIds]);
 
-  // Kjør /dispersion når valgte bøker, ordgrupper eller modus endres
+  // Kjør /dispersion når valgte bøker, ordgrupper eller modus endres (henter KUN bøker som ikke allerede ligger i bookDispCacheRef!)
   useEffect(() => {
     if (orderedSelectedIds.length === 0 || dispersionGroups.length === 0) {
       setDispData(null);
       return;
     }
+
+    const useBins =
+      axisMode === 'bins' ||
+      (orderedSelectedIds.length > 1 && multiLayout === 'sum');
+    const querySignature = JSON.stringify({
+      groups: dispersionGroups,
+      mode: useBins ? `bins:${binsCount}` : `win:${Math.max(100, windowTokens)}`,
+    });
+
+    const targetIds = orderedSelectedIds.slice(0, 10);
+    const missingIds = targetIds.filter(
+      (id) => !bookDispCacheRef.current.has(`${querySignature}::${id}`)
+    );
+
+    const buildFromCache = (): DispersionResponse | null => {
+      const books: DispersionBookResult[] = [];
+      let labels: string[] = dispersionGroups.map((g) => g.join('|'));
+      let winVal: number | null = useBins ? null : Math.max(100, windowTokens);
+      let binsVal: number | null = useBins ? binsCount : null;
+
+      for (const id of targetIds) {
+        const hit = bookDispCacheRef.current.get(`${querySignature}::${id}`);
+        if (hit) {
+          books.push(hit.book);
+          labels = hit.labels;
+          winVal = hit.window;
+          binsVal = hit.bins;
+        }
+      }
+      if (books.length === 0) return null;
+      return {
+        labels,
+        window: winVal,
+        bins: binsVal,
+        books,
+        missing: [],
+      };
+    };
+
+    // Vis det vi allerede har i cachen umiddelbart uten å blanke ut grafen!
+    const partial = buildFromCache();
+    if (partial) {
+      setDispData(partial);
+    }
+
+    if (missingIds.length === 0) {
+      setDispMs(0);
+      setLoading(false);
+      return;
+    }
+
     const ctrl = new AbortController();
     const run = async () => {
       setLoading(true);
@@ -197,7 +254,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
           window?: number;
           bins?: number;
         } = {
-          dhlabids: orderedSelectedIds.slice(0, 10),
+          dhlabids: missingIds,
         };
         const anyGroupMulti = dispersionGroups.some((g) => g.length > 1);
         if (anyGroupMulti) {
@@ -206,11 +263,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
           req.terms = dispersionGroups.map((g) => g[0]);
         }
 
-        // Hvis flere bøker og 'sum'-oppsett er valgt, bruk alltid bins
-        if (
-          axisMode === 'bins' ||
-          (orderedSelectedIds.length > 1 && multiLayout === 'sum')
-        ) {
+        if (useBins) {
           req.bins = binsCount;
         } else {
           req.window = Math.max(100, windowTokens);
@@ -221,7 +274,20 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
           req,
           ctrl.signal
         );
-        setDispData(data);
+        for (const b of data.books) {
+          bookDispCacheRef.current.set(`${querySignature}::${b.dhlabid}`, {
+            labels: data.labels,
+            window: data.window,
+            bins: data.bins,
+            book: b,
+          });
+        }
+        const merged = buildFromCache();
+        if (merged) {
+          setDispData(merged);
+        } else {
+          setDispData(data);
+        }
         setDispMs(clientMs);
       } catch (err) {
         if (ctrl.signal.aborted) return;
