@@ -39,6 +39,114 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   const captionId = useId();
   const limitSelectId = useId();
 
+  // Finn gruppeliste fra parsed spørring slik at vi kan vise en fargeforklaring over tabellen
+  const groupLabels: { label: string; isAnchor: boolean; groupIdx: number }[] =
+    React.useMemo(() => {
+      const rawGroups =
+        parsed.termGroups && parsed.termGroups.length > 0
+          ? parsed.termGroups
+          : parsed.terms.map((w) => [w]);
+      const anyExplicitCaret = rawGroups.some((g) =>
+        g.some((w) => w.startsWith('^'))
+      );
+      return rawGroups.map((g, idx) => {
+        const hasCaret = g.some((w) => w.startsWith('^'));
+        const isAnchor =
+          parsed.matchMode === 'sequence'
+            ? true
+            : anyExplicitCaret
+            ? hasCaret
+            : idx === 0;
+        const cleanWords = g.map((w) => w.replace(/^\^/, ''));
+        return {
+          label: cleanWords.length > 1 ? cleanWords.join(' | ') : cleanWords[0] ?? '',
+          isAnchor,
+          groupIdx: idx,
+        };
+      });
+    }, [parsed]);
+
+  // Bygg opp fargede tokens i left, hit og right ved hjelp av row.marks ([tokenIndex, groupIndex])
+  const renderSegmentedRow = (row: ConcordanceResponse['rows'][number]) => {
+    const leftTokens = row.left ? row.left.trim().split(/\s+/).filter(Boolean) : [];
+    const hitTokens = row.hit ? row.hit.trim().split(/\s+/).filter(Boolean) : [];
+    const rightTokens = row.right
+      ? row.right.trim().split(/\s+/).filter(Boolean)
+      : [];
+
+    const markMap = new Map<number, number>();
+    if (Array.isArray(row.marks)) {
+      for (const pair of row.marks) {
+        if (Array.isArray(pair) && pair.length >= 2) {
+          markMap.set(pair[0], pair[1]);
+        }
+      }
+    }
+
+    const leftStart = 0;
+    const hitStart = leftTokens.length;
+    const rightStart = leftTokens.length + hitTokens.length;
+
+    const renderTokenList = (
+      tokens: string[],
+      baseIdx: number,
+      isHitCol: boolean
+    ) => {
+      if (tokens.length === 0) return null;
+      return tokens.map((tok, i) => {
+        const globalIdx = baseIdx + i;
+        const gIdx = markMap.get(globalIdx);
+        const space = i < tokens.length - 1 ? ' ' : '';
+
+        if (isHitCol) {
+          const groupClass =
+            gIdx !== undefined ? `g${Math.min(4, gIdx)}` : 'g0';
+          return (
+            <React.Fragment key={globalIdx}>
+              <mark className={`conc-mark ${groupClass} anchor`}>{tok}</mark>
+              {space}
+            </React.Fragment>
+          );
+        }
+
+        if (gIdx !== undefined) {
+          const groupClass = `g${Math.min(4, gIdx)}`;
+          const isAnchorIdx = row.anchor !== undefined && globalIdx === row.anchor;
+          return (
+            <React.Fragment key={globalIdx}>
+              <mark
+                className={`conc-mark ${groupClass}${
+                  isAnchorIdx ? ' anchor' : ''
+                }`}
+              >
+                {tok}
+              </mark>
+              {space}
+            </React.Fragment>
+          );
+        }
+
+        return (
+          <React.Fragment key={globalIdx}>
+            {tok}
+            {space}
+          </React.Fragment>
+        );
+      });
+    };
+
+    return {
+      leftNode: renderTokenList(leftTokens, leftStart, false),
+      hitNode:
+        hitTokens.length > 0 ? (
+          renderTokenList(hitTokens, hitStart, true)
+        ) : (
+          <mark className="conc-mark g0 anchor">{row.hit}</mark>
+        ),
+      rightNode: renderTokenList(rightTokens, rightStart, false),
+    };
+  };
+
   const exportExcel = () => {
     if (!data || data.rows.length === 0) return;
     const matrix: (string | number)[][] = [
@@ -98,7 +206,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
             type="button"
             className="btn-secondary"
             onClick={onFetch}
-            disabled={loading || parsed.terms.length === 0 || parsed.hasWildcardOrGroup}
+            disabled={loading || parsed.terms.length === 0}
           >
             {loading ? t.fetchingBtn : t.refetchBtn}
           </button>
@@ -122,12 +230,6 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
         )}
       </div>
 
-      {parsed.hasWildcardOrGroup && (
-        <div role="alert" className="error-banner">
-          Wildcard (<code>*</code>) støttes i tellinger og trender, men ikke i konkordans.
-        </div>
-      )}
-
       {error && (
         <div role="alert" className="error-banner">
           {error}
@@ -138,6 +240,22 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
         <div role="status" aria-live="polite" className="loading-card">
           <span className="spinner" aria-hidden="true" />
           <span>Henter konkordanslinjer…</span>
+        </div>
+      )}
+
+      {data && data.rows.length > 0 && groupLabels.length > 1 && (
+        <div className="conc-group-legend" aria-label="Fargeforklaring for søkeord">
+          {groupLabels.map((gl) => (
+            <span key={gl.groupIdx} className="conc-legend-item">
+              <mark
+                className={`conc-mark g${Math.min(4, gl.groupIdx)}${
+                  gl.isAnchor ? ' anchor' : ''
+                }`}
+              >
+                {gl.isAnchor ? `^${gl.label}` : gl.label}
+              </mark>
+            </span>
+          ))}
         </div>
       )}
 
@@ -169,18 +287,19 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((row, i) => (
-                <tr key={`${row.dhlabid}-${i}`}>
-                  <th scope="row" className="col-dhlabid">
-                    <code>{row.dhlabid}</code>
-                  </th>
-                  <td className="col-left">{row.left}</td>
-                  <td className="col-hit">
-                    <mark className="kwic-hit">{row.hit}</mark>
-                  </td>
-                  <td className="col-right">{row.right}</td>
-                </tr>
-              ))}
+              {data.rows.map((row, i) => {
+                const { leftNode, hitNode, rightNode } = renderSegmentedRow(row);
+                return (
+                  <tr key={`${row.dhlabid}-${i}`}>
+                    <th scope="row" className="col-dhlabid">
+                      <code>{row.dhlabid}</code>
+                    </th>
+                    <td className="col-left">{leftNode}</td>
+                    <td className="col-hit">{hitNode}</td>
+                    <td className="col-right">{rightNode}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

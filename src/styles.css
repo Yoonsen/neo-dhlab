@@ -1486,6 +1486,53 @@ tbody th {
   font-weight: 700;
 }
 
+.conc-group-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: safe center;
+  gap: 0.45rem;
+  margin-block-end: 0.65rem;
+  font-size: 0.84rem;
+}
+
+.conc-legend-item {
+  display: inline-flex;
+  align-items: safe center;
+}
+
+.conc-mark {
+  background: none;
+  color: #1c1917;
+  padding: 0.08rem 0.3rem;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.conc-mark.anchor {
+  font-weight: 700;
+  outline: 1.5px solid rgba(28, 25, 23, 0.28);
+}
+
+.conc-mark.g0 {
+  background: #fde68a;
+}
+
+.conc-mark.g1 {
+  background: #bfdbfe;
+}
+
+.conc-mark.g2 {
+  background: #bbf7d0;
+}
+
+.conc-mark.g3 {
+  background: #fbcfe8;
+}
+
+.conc-mark.g4 {
+  background: #ddd6fe;
+}
+
 /* Corpus builder */
 .corpus-status-card {
   display: flex;

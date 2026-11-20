@@ -300,7 +300,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         <button
                           type="button"
                           className="btn-tiny"
-                          disabled={item.parsed.hasWildcardOrGroup}
                           onClick={() => onFetchConcordanceFor(item.parsed)}
                         >
                           {t.showBtn}

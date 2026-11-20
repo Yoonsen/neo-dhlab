@@ -51,6 +51,9 @@ export interface ConcordanceRow {
   left: string;
   hit: string;
   right: string;
+  anchor?: number;
+  marks?: [number, number][];
+  html?: string;
 }
 
 export interface ConcordanceResponse {
@@ -1075,20 +1078,30 @@ export function parseSearchQuery(
 
   if (isQuotedPhrase) {
     const inner = trimmed.slice(1, -1).trim();
-    const cleanTerms = inner
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((t) => (t.startsWith('^') && t.length > 1 ? t.slice(1) : t));
+    const { groups: phraseGroups } = parseCnfGroups(inner, windowSize, symmetric);
+    const hasPhraseOr = phraseGroups.some((g) => g.length > 1);
+    const hasPhraseWildcard = phraseGroups.some((g) =>
+      g.some((w) => w.includes('*'))
+    );
+    const hasWildcardOrGroup = hasPhraseOr || hasPhraseWildcard;
+    const cleanTerms = phraseGroups.map((g) =>
+      g[0].startsWith('^') && g[0].length > 1 ? g[0].slice(1) : g[0]
+    );
     return {
       raw: trimmed,
       terms: cleanTerms,
+      termGroups: hasWildcardOrGroup
+        ? phraseGroups.map((g) =>
+            g.map((w) => (w.startsWith('^') && w.length > 1 ? w.slice(1) : w))
+          )
+        : undefined,
       matchMode: 'sequence',
       window: windowSize,
       symmetric,
       anchorWord: null,
-      hasWildcardOrGroup: false,
-      hasOrGroup: false,
-      predictedModeLabel: `Frase i rekkefølge (${cleanTerms.length} ord)`,
+      hasWildcardOrGroup,
+      hasOrGroup: hasPhraseOr,
+      predictedModeLabel: `Frase i rekkefølge (${cleanTerms.length} ledd)`,
       canComparePairAnchor: false,
       pairWords: null,
       syntaxDialect: 'native',
@@ -1379,11 +1392,6 @@ export async function fetchConcordancePublic(
   clientMs: number;
   payload: Record<string, unknown>;
 }> {
-  if (parsed.hasWildcardOrGroup) {
-    throw new Error(
-      'Wildcard (*) og OR-grupper støttes i tellinger og trender, men ikke i offentlig konkordans (/concordance_public).'
-    );
-  }
   const hitTokenCount =
     parsed.matchMode === 'sequence' ? parsed.terms.length : 1;
   const maxContextBudget = Math.max(0, 25 - hitTokenCount);
@@ -1395,11 +1403,16 @@ export async function fetchConcordancePublic(
   }
 
   const payload: Record<string, unknown> = {
-    terms: parsed.terms,
     before,
     after,
     limit: Math.min(200, Math.max(1, options.limit)),
   };
+
+  if (parsed.hasWildcardOrGroup && parsed.termGroups) {
+    payload.termGroups = parsed.termGroups;
+  } else {
+    payload.terms = parsed.terms;
+  }
 
   if (parsed.matchMode === 'sequence') {
     payload.matchMode = 'sequence';
