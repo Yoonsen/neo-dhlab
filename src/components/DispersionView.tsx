@@ -140,15 +140,13 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     baseUrl,
     candidateBookIdsFromConcordance,
     corpus.corpusToken,
     corpus.enabled,
-    knownMetadata,
-    onNewMetadata,
-    onSelectedBookIdsChange,
-    selectedBookIds.length,
+    corpus.size,
   ]);
 
   // Sikre at vi har metadata for alle valgte bøker

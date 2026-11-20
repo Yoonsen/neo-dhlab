@@ -187,6 +187,9 @@ export const App: React.FC = () => {
   // Bibliografisk metadata-cache (dhlabid -> BookMetadataRow) + valgte bøker for narrativ bue
   const [metadataById, setMetadataById] = useState<Record<number, BookMetadataRow>>({});
   const [dispersionBookIds, setDispersionBookIds] = useState<number[]>([]);
+  const [submittedDispParsedList, setSubmittedDispParsedList] = useState<ParsedQuery[]>(
+    () => parseMultiSearchQuery('demokrati, diktatur', 5, true)
+  );
 
   const mergeMetadataRows = useCallback((rows: BookMetadataRow[]) => {
     if (!rows || rows.length === 0) return;
@@ -447,6 +450,7 @@ export const App: React.FC = () => {
     tab = activeTab,
     targetCorpus = corpus
   ) => {
+    setSubmittedDispParsedList(targetList);
     if (tab === 'overview') {
       void executeCountQueue(targetList, targetCorpus);
     } else if (tab === 'trends') {
@@ -535,13 +539,14 @@ export const App: React.FC = () => {
 
   const handleTabSelect = (nextTab: TabId) => {
     setActiveTab(nextTab);
-    if (nextTab === 'trends' && trendSeries.length === 0) {
+    if (nextTab === 'dispersion') {
+      setSubmittedDispParsedList(parsedList);
+    } else if (nextTab === 'trends' && trendSeries.length === 0) {
       void executeTrendQueue(parsedList, startYear, endYear, corpus);
     } else if (
       nextTab === 'concordance' &&
       !concData &&
-      activeConcParsed &&
-      !activeConcParsed.hasWildcardOrGroup
+      activeConcParsed
     ) {
       void executeConcordanceSearch(activeConcParsed, concOptions, corpus);
     } else if (nextTab === 'overview' && countItems.length === 0) {
@@ -1062,6 +1067,7 @@ export const App: React.FC = () => {
                   void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
                 }
                 onOpenDispersionForBook={(dhlabid) => {
+                  setSubmittedDispParsedList(parsedList);
                   setDispersionBookIds((prev) =>
                     prev.includes(dhlabid)
                       ? prev
@@ -1097,7 +1103,7 @@ export const App: React.FC = () => {
                 t={t}
                 baseUrl={baseUrl}
                 corpus={corpus}
-                parsedList={parsedList}
+                parsedList={submittedDispParsedList}
                 selectedBookIds={dispersionBookIds}
                 onSelectedBookIdsChange={setDispersionBookIds}
                 knownMetadata={metadataById}
