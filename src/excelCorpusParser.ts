@@ -210,11 +210,15 @@ function extractIdsFromTable(rows: string[][]): ExtractedCorpusIds {
     return { dhlabids: [], urns: [], detectedColumn: 'ingen', rowCount: 0 };
   }
 
-  const header = rows[0].map((h) => (h ?? '').trim().toLowerCase());
+  const header: string[] = Array.from(rows[0], (h) =>
+    (h ?? '').trim().toLowerCase()
+  );
   const dhlabidCol = header.findIndex(
     (h) => h === 'dhlabid' || h === 'book_id' || h === 'id'
   );
-  const urnCol = header.findIndex((h) => h === 'urn' || h.startsWith('urn'));
+  const urnCol = header.findIndex(
+    (h) => Boolean(h) && (h === 'urn' || h.startsWith('urn'))
+  );
 
   const dhlabidsSet = new Set<number>();
   const urnsSet = new Set<string>();
