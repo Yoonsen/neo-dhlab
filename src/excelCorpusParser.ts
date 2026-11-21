@@ -155,8 +155,10 @@ async function parseXlsxRows(buffer: ArrayBuffer): Promise<string[][]> {
       }
       rowValues[colIdx] = val.trim();
     }
-    if (rowValues.some((v) => v && v.length > 0)) {
-      table.push(rowValues);
+    // Fyll eventuelle hull (sparse cells, f.eks. tom A1 eller tomme celler midt i raden) med ""
+    const denseRow = Array.from(rowValues, (v) => v ?? '');
+    if (denseRow.some((v) => v.length > 0)) {
+      table.push(denseRow);
     }
   }
 
