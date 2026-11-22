@@ -1650,8 +1650,10 @@ export async function fetchCollocationsDist(
     prior: options.prior ?? 2,
     limit: options.limit ?? 1500,
     expected: options.expected ?? true,
-    sides: options.sides ?? (options.before > 0 && options.after > 0),
   };
+  if (options.sides !== undefined) {
+    payload.sides = options.sides;
+  }
 
   if (parsed.hasWildcardOrGroup && parsed.termGroups) {
     payload.termGroups = parsed.termGroups;

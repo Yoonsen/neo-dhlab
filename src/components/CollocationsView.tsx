@@ -21,17 +21,7 @@ interface CollocationsViewProps {
 }
 
 type DirectionMode = 'both' | 'before' | 'after' | 'split';
-type SortBy =
-  | 'word'
-  | 'counts'
-  | 'dist'
-  | 'sd'
-  | 'z'
-  | 'wps'
-  | 'ps'
-  | 'ratio'
-  | 'pmi'
-  | 'skew';
+type SortBy = 'word' | 'counts' | 'dist' | 'sd' | 'z' | 'ps' | 'ratio';
 type SortDir = 'asc' | 'desc';
 
 const DEFAULT_PUNCT_STOP = new Set([
@@ -80,12 +70,14 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
   const filterInputId = useId();
   const foldCheckId = useId();
   const hidePunctCheckId = useId();
+  const expectedCheckId = useId();
   const captionId = useId();
 
   const [dirMode, setDirMode] = useState<DirectionMode>('both');
   const [collWindow, setCollWindow] = useState<number>(5);
   const [foldCase, setFoldCase] = useState<boolean>(true);
   const [hidePunct, setHidePunct] = useState<boolean>(true);
+  const [includeExpected, setIncludeExpected] = useState<boolean>(true);
   const [sampleSize, setSampleSize] = useState<number>(5000);
   const [perBook, setPerBook] = useState<number>(10);
   const [sortBy, setSortBy] = useState<SortBy>('counts');
@@ -97,14 +89,9 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(col);
-      // Naturlig standardretning: høyest først ('desc') for counts, z, wps, ps, ratio, pmi; lavest først ('asc') for word, dist, sd, skew
+      // Naturlig standardretning: høyest først ('desc') for counts, z, ps, ratio; lavest først ('asc') for word, dist, sd
       setSortDir(
-        col === 'counts' ||
-          col === 'z' ||
-          col === 'wps' ||
-          col === 'ps' ||
-          col === 'ratio' ||
-          col === 'pmi'
+        col === 'counts' || col === 'z' || col === 'ps' || col === 'ratio'
           ? 'desc'
           : 'asc'
       );
@@ -170,6 +157,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       dirMode,
       collWindow,
       foldCase,
+      includeExpected,
       sampleSize,
       perBook,
     });
@@ -212,6 +200,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                 sampleSize,
                 perBook,
                 limit: 1000,
+                expected: includeExpected,
               },
               ctrl.signal
             ),
@@ -226,6 +215,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                 sampleSize,
                 perBook,
                 limit: 1000,
+                expected: includeExpected,
               },
               ctrl.signal
             ),
@@ -256,6 +246,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               sampleSize,
               perBook,
               limit: 1500,
+              expected: includeExpected,
             },
             ctrl.signal
           );
@@ -282,7 +273,17 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
 
     void run();
     return () => ctrl.abort();
-  }, [baseUrl, collWindow, corpus, dirMode, foldCase, parsed, perBook, sampleSize]);
+  }, [
+    baseUrl,
+    collWindow,
+    corpus,
+    dirMode,
+    foldCase,
+    includeExpected,
+    parsed,
+    perBook,
+    sampleSize,
+  ]);
 
   // Filtrer og sorter en liste med CollocationRow
   const processRows = (
@@ -311,11 +312,8 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
         if (sortBy === 'dist') return row.dist;
         if (sortBy === 'sd') return row.sd ?? null;
         if (sortBy === 'z') return row.z ?? null;
-        if (sortBy === 'wps') return row.wps ?? null;
         if (sortBy === 'ps') return row.ps ?? null;
         if (sortBy === 'ratio') return row.ratio ?? null;
-        if (sortBy === 'pmi') return row.pmi ?? null;
-        if (sortBy === 'skew') return row.skew ?? null;
         return null;
       };
 
@@ -366,19 +364,15 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
           'foran_dist',
           'foran_sd',
           'foran_z',
-          'foran_wps',
           'foran_ps',
           'foran_ratio',
-          'foran_pmi',
           'etter_ord',
           'etter_antall',
           'etter_dist',
           'etter_sd',
           'etter_z',
-          'etter_wps',
           'etter_ps',
           'etter_ratio',
-          'etter_pmi',
         ],
       ];
       for (let i = 0; i < maxLen; i++) {
@@ -390,19 +384,15 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
           b && b.dist !== null ? b.dist : '',
           b && b.sd !== null && b.sd !== undefined ? b.sd : '',
           b && b.z !== null && b.z !== undefined ? b.z : '',
-          b && b.wps !== null && b.wps !== undefined ? b.wps : '',
           b && b.ps !== null && b.ps !== undefined ? b.ps : '',
           b && b.ratio !== null && b.ratio !== undefined ? b.ratio : '',
-          b && b.pmi !== null && b.pmi !== undefined ? b.pmi : '',
           a?.word ?? '',
           a?.counts ?? '',
           a && a.dist !== null ? a.dist : '',
           a && a.sd !== null && a.sd !== undefined ? a.sd : '',
           a && a.z !== null && a.z !== undefined ? a.z : '',
-          a && a.wps !== null && a.wps !== undefined ? a.wps : '',
           a && a.ps !== null && a.ps !== undefined ? a.ps : '',
           a && a.ratio !== null && a.ratio !== undefined ? a.ratio : '',
-          a && a.pmi !== null && a.pmi !== undefined ? a.pmi : '',
         ]);
       }
       downloadExcelFile(
@@ -421,11 +411,8 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
         'dist',
         'sd',
         'z',
-        'wps',
         'ps',
         'ratio',
-        'pmi',
-        'skew',
         'expected',
         'mu0',
       ],
@@ -436,11 +423,8 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
         r.dist !== null ? r.dist : '',
         r.sd !== null && r.sd !== undefined ? r.sd : '',
         r.z !== null && r.z !== undefined ? r.z : '',
-        r.wps !== null && r.wps !== undefined ? r.wps : '',
         r.ps !== null && r.ps !== undefined ? r.ps : '',
         r.ratio !== null && r.ratio !== undefined ? r.ratio : '',
-        r.pmi !== null && r.pmi !== undefined ? r.pmi : '',
-        r.skew !== null && r.skew !== undefined ? r.skew : '',
         r.expected !== null && r.expected !== undefined ? r.expected : '',
         mainData.mu0,
       ]),
@@ -564,6 +548,19 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             <label htmlFor={hidePunctCheckId}>Skjul tegn</label>
           </div>
 
+          <div
+            className="checkbox-inline"
+            title="Beregn forventet korpusfrekvens (expected = true) for å vise Poisson-Stirling (ps) og Ratio. Slå av for kun lokale mål (Antall, dist, sd, z)."
+          >
+            <input
+              id={expectedCheckId}
+              type="checkbox"
+              checked={includeExpected}
+              onChange={(e) => setIncludeExpected(e.target.checked)}
+            />
+            <label htmlFor={expectedCheckId}>ps / ratio</label>
+          </div>
+
           <div className="field-inline">
             <label htmlFor={filterInputId} className="visually-hidden">
               Filtrer ord i kollokasjonslisten
@@ -613,9 +610,14 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             <span className="spinner" aria-hidden="true" />
             <div>
               <strong>
-                Beregner kollokasjoner, avstand (<code>dist</code>,{' '}
-                <code>sd</code>, <code>z</code>) og Poisson-Stirling (
-                <code>ps</code>) for «{parsed.raw}»…
+                Beregner kollokasjoner (<code>dist</code>, <code>sd</code>,{' '}
+                <code>z</code>
+                {includeExpected ? (
+                  <>
+                    , <code>ps</code>, <code>ratio</code>
+                  </>
+                ) : null}
+                ) for «{parsed.raw}»…
               </strong>
               <div className="muted" style={{ fontSize: '0.82rem' }}>
                 Utvalg: opptil {sampleSize.toLocaleString('nb-NO')} treff (maks{' '}
@@ -708,7 +710,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                 <th
                   scope="col"
                   aria-sort={getAriaSort('z')}
-                  title="Avstands-z-score: (μ₀ − dist) / √(var₀ / n). Positiv verdi betyr at ordet står nærmere søkeordet enn tilfeldig forventet."
+                  title="Avstands-z-score: (μ₀ − dist) / √(var₀ / n). Lokalt mål på masse og nærhet kombinert – positiv verdi betyr at ordet står nærmere søkeordet enn tilfeldig forventet."
                 >
                   <button
                     type="button"
@@ -719,77 +721,37 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     {renderSortArrow('z')}
                   </button>
                 </th>
-                <th
-                  scope="col"
-                  aria-sort={getAriaSort('wps')}
-                  title="Vektet Poisson-Stirling (wps): hver forekomst vektes 1/d mot λ·w̄. Høy verdi for ord som er både hyppige og står tett inntil søkeordet."
-                >
-                  <button
-                    type="button"
-                    className="th-sort-btn"
-                    onClick={() => handleHeaderSort('wps')}
-                  >
-                    <span>Vektet PS (wps)</span>
-                    {renderSortArrow('wps')}
-                  </button>
-                </th>
-                <th
-                  scope="col"
-                  aria-sort={getAriaSort('ps')}
-                  title="Poisson-Stirling-assosiasjon: n · (ln n − ln λ − 1) mot forventet frekvens i korpuset."
-                >
-                  <button
-                    type="button"
-                    className="th-sort-btn"
-                    onClick={() => handleHeaderSort('ps')}
-                  >
-                    <span>PS (ps)</span>
-                    {renderSortArrow('ps')}
-                  </button>
-                </th>
-                <th
-                  scope="col"
-                  aria-sort={getAriaSort('ratio')}
-                  title="Relativ overrepresentasjon p(x|y) / p(x) = counts / expected"
-                >
-                  <button
-                    type="button"
-                    className="th-sort-btn"
-                    onClick={() => handleHeaderSort('ratio')}
-                  >
-                    <span>Ratio</span>
-                    {renderSortArrow('ratio')}
-                  </button>
-                </th>
-                <th
-                  scope="col"
-                  aria-sort={getAriaSort('pmi')}
-                  title="Pointwise Mutual Information: log₂(counts / expected)"
-                >
-                  <button
-                    type="button"
-                    className="th-sort-btn"
-                    onClick={() => handleHeaderSort('pmi')}
-                  >
-                    <span>PMI</span>
-                    {renderSortArrow('pmi')}
-                  </button>
-                </th>
-                {dirMode === 'both' && (
-                  <th
-                    scope="col"
-                    aria-sort={getAriaSort('skew')}
-                    title="Retningsskjevhet fra −1.00 (kun foran søkeordet) til +1.00 (kun etter søkeordet)"
-                  >
-                    <button
-                      type="button"
-                      className="th-sort-btn"
-                      onClick={() => handleHeaderSort('skew')}
+                {includeExpected && (
+                  <>
+                    <th
+                      scope="col"
+                      aria-sort={getAriaSort('ps')}
+                      title="Poisson-Stirling-assosiasjon: n · (ln n − ln λ − 1) mot forventet frekvens i korpuset."
                     >
-                      <span>Skew</span>
-                      {renderSortArrow('skew')}
-                    </button>
-                  </th>
+                      <button
+                        type="button"
+                        className="th-sort-btn"
+                        onClick={() => handleHeaderSort('ps')}
+                      >
+                        <span>Poisson-Stirling (ps)</span>
+                        {renderSortArrow('ps')}
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={getAriaSort('ratio')}
+                      title="Relativ overrepresentasjon p(x|y) / p(x) = counts / expected"
+                    >
+                      <button
+                        type="button"
+                        className="th-sort-btn"
+                        onClick={() => handleHeaderSort('ratio')}
+                      >
+                        <span>Ratio</span>
+                        {renderSortArrow('ratio')}
+                      </button>
+                    </th>
+                  </>
                 )}
                 <th scope="col">Konkordans</th>
               </tr>
@@ -843,28 +805,13 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <td>
                       <strong>{formatMetric(row.z, 2)}</strong>
                     </td>
-                    <td>
-                      <strong>{formatMetric(row.wps, 1)}</strong>
-                    </td>
-                    <td>{formatMetric(row.ps, 1)}</td>
-                    <td>{formatMetric(row.ratio, 1)}</td>
-                    <td>{formatMetric(row.pmi, 2)}</td>
-                    {dirMode === 'both' && (
-                      <td
-                        title={
-                          row.left && row.right
-                            ? `Foran: ${row.left.counts} (dist ${formatMetric(
-                                row.left.dist,
-                                2
-                              )}) · Etter: ${row.right.counts} (dist ${formatMetric(
-                                row.right.dist,
-                                2
-                              )})`
-                            : undefined
-                        }
-                      >
-                        {formatMetric(row.skew, 2)}
-                      </td>
+                    {includeExpected && (
+                      <>
+                        <td>
+                          <strong>{formatMetric(row.ps, 1)}</strong>
+                        </td>
+                        <td>{formatMetric(row.ratio, 1)}</td>
+                      </>
                     )}
                     <td>
                       <button
@@ -943,26 +890,30 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       {renderSortArrow('z')}
                     </button>
                   </th>
-                  <th scope="col" aria-sort={getAriaSort('wps')}>
-                    <button
-                      type="button"
-                      className="th-sort-btn"
-                      onClick={() => handleHeaderSort('wps')}
-                    >
-                      <span>wps</span>
-                      {renderSortArrow('wps')}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={getAriaSort('ps')}>
-                    <button
-                      type="button"
-                      className="th-sort-btn"
-                      onClick={() => handleHeaderSort('ps')}
-                    >
-                      <span>ps</span>
-                      {renderSortArrow('ps')}
-                    </button>
-                  </th>
+                  {includeExpected && (
+                    <>
+                      <th scope="col" aria-sort={getAriaSort('ps')}>
+                        <button
+                          type="button"
+                          className="th-sort-btn"
+                          onClick={() => handleHeaderSort('ps')}
+                        >
+                          <span>ps</span>
+                          {renderSortArrow('ps')}
+                        </button>
+                      </th>
+                      <th scope="col" aria-sort={getAriaSort('ratio')}>
+                        <button
+                          type="button"
+                          className="th-sort-btn"
+                          onClick={() => handleHeaderSort('ratio')}
+                        >
+                          <span>ratio</span>
+                          {renderSortArrow('ratio')}
+                        </button>
+                      </th>
+                    </>
+                  )}
                   <th scope="col">KWIC</th>
                 </tr>
               </thead>
@@ -980,10 +931,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <td>
                       <strong>{formatMetric(row.z, 2)}</strong>
                     </td>
-                    <td>
-                      <strong>{formatMetric(row.wps, 1)}</strong>
-                    </td>
-                    <td>{formatMetric(row.ps, 1)}</td>
+                    {includeExpected && (
+                      <>
+                        <td>{formatMetric(row.ps, 1)}</td>
+                        <td>{formatMetric(row.ratio, 1)}</td>
+                      </>
+                    )}
                     <td>
                       <button
                         type="button"
@@ -1056,26 +1009,30 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       {renderSortArrow('z')}
                     </button>
                   </th>
-                  <th scope="col" aria-sort={getAriaSort('wps')}>
-                    <button
-                      type="button"
-                      className="th-sort-btn"
-                      onClick={() => handleHeaderSort('wps')}
-                    >
-                      <span>wps</span>
-                      {renderSortArrow('wps')}
-                    </button>
-                  </th>
-                  <th scope="col" aria-sort={getAriaSort('ps')}>
-                    <button
-                      type="button"
-                      className="th-sort-btn"
-                      onClick={() => handleHeaderSort('ps')}
-                    >
-                      <span>ps</span>
-                      {renderSortArrow('ps')}
-                    </button>
-                  </th>
+                  {includeExpected && (
+                    <>
+                      <th scope="col" aria-sort={getAriaSort('ps')}>
+                        <button
+                          type="button"
+                          className="th-sort-btn"
+                          onClick={() => handleHeaderSort('ps')}
+                        >
+                          <span>ps</span>
+                          {renderSortArrow('ps')}
+                        </button>
+                      </th>
+                      <th scope="col" aria-sort={getAriaSort('ratio')}>
+                        <button
+                          type="button"
+                          className="th-sort-btn"
+                          onClick={() => handleHeaderSort('ratio')}
+                        >
+                          <span>ratio</span>
+                          {renderSortArrow('ratio')}
+                        </button>
+                      </th>
+                    </>
+                  )}
                   <th scope="col">KWIC</th>
                 </tr>
               </thead>
@@ -1093,10 +1050,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <td>
                       <strong>{formatMetric(row.z, 2)}</strong>
                     </td>
-                    <td>
-                      <strong>{formatMetric(row.wps, 1)}</strong>
-                    </td>
-                    <td>{formatMetric(row.ps, 1)}</td>
+                    {includeExpected && (
+                      <>
+                        <td>{formatMetric(row.ps, 1)}</td>
+                        <td>{formatMetric(row.ratio, 1)}</td>
+                      </>
+                    )}
                     <td>
                       <button
                         type="button"
