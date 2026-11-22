@@ -56,6 +56,50 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const [compLoading, setCompLoading] = useState<boolean>(false);
   const [compKey, setCompKey] = useState<string>('');
 
+  type CountSortCol = 'expr' | 'total' | 'docs' | 'intensity' | 'ms';
+  const [sortCol, setSortCol] = useState<CountSortCol | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (col: CountSortCol) => {
+    if (sortCol === col) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir(col === 'expr' || col === 'ms' ? 'asc' : 'desc');
+    }
+  };
+
+  const renderSortArrow = (col: CountSortCol) => {
+    if (sortCol !== col) return <span className="sort-indicator-muted">↕</span>;
+    return (
+      <span className="sort-indicator-active">
+        {sortDir === 'asc' ? '▲' : '▼'}
+      </span>
+    );
+  };
+
+  const sortedItems = React.useMemo(() => {
+    if (!sortCol) return items;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      if (sortCol === 'expr') {
+        return mul * a.parsed.raw.localeCompare(b.parsed.raw, 'nb-NO');
+      }
+      if (sortCol === 'total') {
+        return mul * (a.result.total - b.result.total);
+      }
+      if (sortCol === 'docs') {
+        return mul * (a.result.docs - b.result.docs);
+      }
+      if (sortCol === 'intensity') {
+        const ia = a.result.docs > 0 ? a.result.total / a.result.docs : 0;
+        const ib = b.result.docs > 0 ? b.result.total / b.result.docs : 0;
+        return mul * (ia - ib);
+      }
+      return mul * (a.clientMs - b.clientMs);
+    });
+  }, [items, sortCol, sortDir]);
+
   const singleItem = items.length === 1 && pendingQueries.length === 0 ? items[0] : null;
   const parsed = singleItem?.parsed;
   const result = singleItem?.result;
@@ -261,18 +305,72 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <table>
               <thead>
                 <tr>
-                  <th scope="col">{t.colExpression}</th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('expr')}
+                    >
+                      <span>{t.colExpression}</span>
+                      {renderSortArrow('expr')}
+                    </button>
+                  </th>
                   <th scope="col">{t.colCountMode}</th>
-                  <th scope="col">{t.colHits}</th>
-                  <th scope="col">{t.colBooks}</th>
-                  <th scope="col">{t.colCoverage}</th>
-                  <th scope="col">{t.colIntensity}</th>
-                  <th scope="col">{t.colTime}</th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('total')}
+                    >
+                      <span>{t.colHits}</span>
+                      {renderSortArrow('total')}
+                    </button>
+                  </th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('docs')}
+                    >
+                      <span>{t.colBooks}</span>
+                      {renderSortArrow('docs')}
+                    </button>
+                  </th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('docs')}
+                    >
+                      <span>{t.colCoverage}</span>
+                      {renderSortArrow('docs')}
+                    </button>
+                  </th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('intensity')}
+                    >
+                      <span>{t.colIntensity}</span>
+                      {renderSortArrow('intensity')}
+                    </button>
+                  </th>
+                  <th scope="col">
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => toggleSort('ms')}
+                    >
+                      <span>{t.colTime}</span>
+                      {renderSortArrow('ms')}
+                    </button>
+                  </th>
                   <th scope="col">{t.colConcordance}</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {sortedItems.map((item) => {
                   const perBook =
                     item.result.docs > 0
                       ? (item.result.total / item.result.docs).toFixed(1)

@@ -1684,6 +1684,64 @@ tbody th {
   color: var(--accent);
 }
 
+.bdist-cell {
+  display: inline-flex;
+  align-items: safe center;
+  gap: 0.45rem;
+}
+
+.closeness-bar {
+  display: inline-block;
+  block-size: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.split-collocations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 1rem;
+}
+
+.th-sort-btn {
+  display: inline-flex;
+  align-items: safe center;
+  gap: 0.3rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.th-sort-btn:hover {
+  color: var(--accent);
+}
+
+.th-sort-btn-end {
+  inline-size: 100%;
+  justify-content: flex-end;
+}
+
+.th-sort-btn-center {
+  inline-size: 100%;
+  justify-content: center;
+}
+
+.sort-indicator-muted {
+  font-size: 0.75em;
+  opacity: 0.45;
+}
+
+.sort-indicator-active {
+  font-size: 0.78em;
+  color: var(--accent);
+}
+
 .kwic-table .col-left {
   text-align: end;
   inline-size: 42%;

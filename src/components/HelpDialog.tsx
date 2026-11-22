@@ -313,7 +313,7 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
         </section>
 
         <section className="help-section">
-          <h3>5. Konkordans og Vonnegut-bue (Narrativ bue)</h3>
+          <h3>5. Konkordans, Kollokasjoner og Vonnegut-bue</h3>
           <ul>
             <li>
               <strong>Fargemerket Konkordans & Nettbiblioteket:</strong> Støtter
@@ -323,6 +323,15 @@ export const HelpDialog: React.FC<HelpDialogProps> = ({
               <code>^</code>) og hvert partnerledd får egen farge i linja. Klikk
               på boktittelen for å åpne boka direkte i Nettbiblioteket med
               søkeordene markert.
+            </li>
+            <li>
+              <strong>Kollokasjoner med avstand (<code>/collocations_dist</code>):</strong>{' '}
+              Viser ordene som opptrer i vinduet rundt målordet, frasen eller
+              ankeret (f.eks. <code>krig ^fred</code>), med både frekvens (
+              <code>counts</code>), rå snittavstand (<code>dist</code>) og
+              bayesiansk avstand (<code>bdist</code> trukket mot nøytral avstand{' '}
+              <code>μ₀</code>). Velg <strong>Foran | Etter (side om side)</strong>{' '}
+              for å sammenligne venstre- og høyrekollokater direkte.
             </li>
             <li>
               <strong>Vonnegut-bue (<code>/dispersion</code>):</strong> Klikk{' '}

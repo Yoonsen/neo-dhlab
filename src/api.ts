@@ -99,6 +99,27 @@ export interface DispersionResponse {
   total?: number[][];
 }
 
+export interface CollocationRow {
+  word: string;
+  counts: number;
+  dist: number | null;
+  bdist: number;
+}
+
+export interface CollocationsDistResponse {
+  rows: CollocationRow[];
+  hits: number;
+  books: number;
+  mu0: number;
+  before: number;
+  after: number;
+  prior: number;
+  minCount: number;
+  distances: boolean;
+  distanceMinCount: number;
+  collocates: number;
+}
+
 export interface CorpusResponse {
   corpusToken: string;
   size: number;
@@ -1579,6 +1600,58 @@ export async function fetchDispersion(
   signal?: AbortSignal
 ): Promise<{ data: DispersionResponse; clientMs: number }> {
   return timedPost<DispersionResponse>(baseUrl, '/dispersion', req, signal);
+}
+
+export async function fetchCollocationsDist(
+  baseUrl: string,
+  parsed: ParsedQuery,
+  corpus: ActiveCorpus,
+  options: {
+    before: number;
+    after: number;
+    fold?: boolean;
+    sampleSize?: number;
+    perBook?: number;
+    minCount?: number;
+    prior?: number;
+    limit?: number;
+  },
+  signal?: AbortSignal
+): Promise<{ data: CollocationsDistResponse; clientMs: number }> {
+  const payload: Record<string, unknown> = {
+    before: Math.min(50, Math.max(0, options.before)),
+    after: Math.min(50, Math.max(0, options.after)),
+    fold: options.fold ?? true,
+    sampleSize: options.sampleSize ?? 5000,
+    perBook: options.perBook ?? 10,
+    minCount: Math.max(2, options.minCount ?? 2),
+    prior: options.prior ?? 2,
+    limit: options.limit ?? 1000,
+  };
+
+  if (parsed.hasWildcardOrGroup && parsed.termGroups) {
+    payload.termGroups = parsed.termGroups;
+  } else {
+    payload.terms = parsed.terms;
+  }
+
+  if (parsed.matchMode === 'sequence') {
+    payload.matchMode = 'sequence';
+  } else if (parsed.terms.length >= 2) {
+    payload.window = Math.min(50, parsed.window);
+    if (!parsed.symmetric) {
+      payload.symmetric = false;
+    }
+  }
+
+  applyCorpusToPayload(payload, corpus);
+
+  return timedPost<CollocationsDistResponse>(
+    baseUrl,
+    '/collocations_dist',
+    payload,
+    signal
+  );
 }
 
 /**

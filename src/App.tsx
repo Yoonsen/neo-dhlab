@@ -15,6 +15,7 @@ import {
   parseMultiSearchQuery,
   resolveEffectiveCorpus,
 } from './api';
+import { CollocationsView } from './components/CollocationsView';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
 import { DispersionView } from './components/DispersionView';
@@ -23,7 +24,7 @@ import { CountSeriesItem, OverviewTab } from './components/OverviewTab';
 import { SERIES_COLORS, TrendChart, TrendSeriesItem } from './components/TrendChart';
 import { TRANSLATIONS, UI_LANG_OPTIONS, UiLang } from './i18n';
 
-type TabId = 'overview' | 'concordance' | 'trends' | 'dispersion';
+type TabId = 'overview' | 'concordance' | 'collocations' | 'trends' | 'dispersion';
 
 const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
 const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
@@ -170,6 +171,7 @@ export const App: React.FC = () => {
 
   // Concordance state
   const [selectedConcQuery, setSelectedConcQuery] = useState<ParsedQuery | null>(null);
+  const [selectedCollQuery, setSelectedCollQuery] = useState<ParsedQuery | null>(null);
   const [concData, setConcData] = useState<ConcordanceResponse | null>(null);
   const [concMs, setConcMs] = useState<number | null>(null);
   const [concLoading, setConcLoading] = useState<boolean>(false);
@@ -270,6 +272,19 @@ export const App: React.FC = () => {
     }
     return parsedList[0] ?? parseMultiSearchQuery('', windowSize, symmetric)[0];
   }, [parsedList, selectedConcQuery, symmetric, windowSize]);
+
+  const activeCollParsed = useMemo(() => {
+    if (
+      selectedCollQuery &&
+      submittedDispParsedList.some((p) => p.raw === selectedCollQuery.raw)
+    ) {
+      return selectedCollQuery;
+    }
+    return (
+      submittedDispParsedList[0] ??
+      parseMultiSearchQuery('', windowSize, symmetric)[0]
+    );
+  }, [selectedCollQuery, submittedDispParsedList, symmetric, windowSize]);
 
   useEffect(() => {
     checkHealth(baseUrl)
@@ -539,7 +554,7 @@ export const App: React.FC = () => {
 
   const handleTabSelect = (nextTab: TabId) => {
     setActiveTab(nextTab);
-    if (nextTab === 'dispersion') {
+    if (nextTab === 'dispersion' || nextTab === 'collocations') {
       setSubmittedDispParsedList(parsedList);
     } else if (nextTab === 'trends' && trendSeries.length === 0) {
       void executeTrendQueue(parsedList, startYear, endYear, corpus);
@@ -557,6 +572,7 @@ export const App: React.FC = () => {
   const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
     overview: null,
     concordance: null,
+    collocations: null,
     trends: null,
     dispersion: null,
   });
@@ -564,6 +580,7 @@ export const App: React.FC = () => {
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: t.tabCounts },
     { id: 'concordance', label: t.tabConcordance },
+    { id: 'collocations', label: 'Kollokasjoner' },
     { id: 'trends', label: t.tabTrends },
     { id: 'dispersion', label: 'Vonnegut-bue' },
   ];
@@ -1074,6 +1091,43 @@ export const App: React.FC = () => {
                       : [dhlabid, ...prev].slice(0, 10)
                   );
                   setActiveTab('dispersion');
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'collocations' && (
+            <div role="tabpanel" aria-labelledby="tab-collocations">
+              <CollocationsView
+                t={t}
+                baseUrl={baseUrl}
+                corpus={corpus}
+                parsed={activeCollParsed}
+                parsedList={submittedDispParsedList}
+                onSelectParsed={(p) => setSelectedCollQuery(p)}
+                onInspectInConcordance={(collocateWord) => {
+                  const baseTerm =
+                    activeCollParsed.anchorWord ??
+                    activeCollParsed.terms[0]?.replace(/^\^/, '') ??
+                    '';
+                  const pairQuery = baseTerm
+                    ? `^${baseTerm} ${collocateWord}`
+                    : collocateWord;
+                  setQueryText(pairQuery);
+                  const nextParsed = parseMultiSearchQuery(
+                    pairQuery,
+                    windowSize,
+                    symmetric
+                  )[0];
+                  if (nextParsed) {
+                    setSelectedConcQuery(nextParsed);
+                    setActiveTab('concordance');
+                    void executeConcordanceSearch(
+                      nextParsed,
+                      concOptions,
+                      corpus
+                    );
+                  }
                 }}
               />
             </div>

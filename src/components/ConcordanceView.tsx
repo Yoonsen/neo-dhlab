@@ -49,6 +49,54 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
   const captionId = useId();
   const limitSelectId = useId();
 
+  type ConcSortCol = 'book' | 'left' | 'hit' | 'right';
+  const [sortCol, setSortCol] = React.useState<ConcSortCol | null>(null);
+  const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('asc');
+
+  const toggleSort = (col: ConcSortCol) => {
+    if (sortCol === col) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
+  const renderSortArrow = (col: ConcSortCol) => {
+    if (sortCol !== col) return <span className="sort-indicator-muted">↕</span>;
+    return (
+      <span className="sort-indicator-active">
+        {sortDir === 'asc' ? '▲' : '▼'}
+      </span>
+    );
+  };
+
+  const sortedRows = React.useMemo(() => {
+    if (!data?.rows) return [];
+    if (!sortCol) return data.rows;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return [...data.rows].sort((a, b) => {
+      if (sortCol === 'book') {
+        const ma = metadataById[a.dhlabid];
+        const mb = metadataById[b.dhlabid];
+        const ya = ma?.year ?? 9999;
+        const yb = mb?.year ?? 9999;
+        if (ya !== yb) return mul * (ya - yb);
+        return mul * (ma?.title ?? '').localeCompare(mb?.title ?? '', 'nb-NO');
+      }
+      if (sortCol === 'hit') {
+        return mul * a.hit.localeCompare(b.hit, 'nb-NO');
+      }
+      if (sortCol === 'right') {
+        return mul * a.right.trim().localeCompare(b.right.trim(), 'nb-NO');
+      }
+      // sortCol === 'left': sorter på ordet nærmest treffet (siste ord i venstre kontekst!)
+      const lastA = a.left.trim().split(/\s+/).pop() ?? '';
+      const lastB = b.left.trim().split(/\s+/).pop() ?? '';
+      return mul * lastA.localeCompare(lastB, 'nb-NO');
+    });
+  }, [data?.rows, metadataById, sortCol, sortDir]);
+
   // Finn gruppeliste fra parsed spørring slik at vi kan vise en fargeforklaring over tabellen
   const groupLabels: { label: string; isAnchor: boolean; groupIdx: number }[] =
     React.useMemo(() => {
@@ -297,16 +345,47 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
             <thead>
               <tr>
                 <th scope="col" className="col-book-meta">
-                  Bok (Nettbiblioteket)
+                  <button
+                    type="button"
+                    className="th-sort-btn"
+                    onClick={() => toggleSort('book')}
+                    title="Sorter på utgivelsesår / tittel"
+                  >
+                    <span>Bok (Nettbiblioteket)</span>
+                    {renderSortArrow('book')}
+                  </button>
                 </th>
                 <th scope="col" className="col-left">
-                  {t.colLeft}
+                  <button
+                    type="button"
+                    className="th-sort-btn th-sort-btn-end"
+                    onClick={() => toggleSort('left')}
+                    title="Sorter på ordet rett til venstre for treffet"
+                  >
+                    <span>{t.colLeft}</span>
+                    {renderSortArrow('left')}
+                  </button>
                 </th>
                 <th scope="col" className="col-hit">
-                  {t.colHit}
+                  <button
+                    type="button"
+                    className="th-sort-btn th-sort-btn-center"
+                    onClick={() => toggleSort('hit')}
+                  >
+                    <span>{t.colHit}</span>
+                    {renderSortArrow('hit')}
+                  </button>
                 </th>
                 <th scope="col" className="col-right">
-                  {t.colRight}
+                  <button
+                    type="button"
+                    className="th-sort-btn"
+                    onClick={() => toggleSort('right')}
+                    title="Sorter på ordet rett til høyre for treffet"
+                  >
+                    <span>{t.colRight}</span>
+                    {renderSortArrow('right')}
+                  </button>
                 </th>
                 <th scope="col" className="col-arc">
                   Bue
@@ -314,7 +393,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((row, i) => {
+              {sortedRows.map((row, i) => {
                 const { leftNode, hitNode, rightNode } = renderSegmentedRow(row);
                 const meta = metadataById[row.dhlabid];
                 const nbUrl = buildNbItemUrl(meta?.urn, parsed, row.hit);
