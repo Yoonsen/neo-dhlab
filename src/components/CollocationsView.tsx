@@ -420,29 +420,29 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               onChange={(e) => setDirMode(e.target.value as DirectionMode)}
             >
               <option value="both">Begge sider (±{collWindow} ord)</option>
-              <option value="split">Foran | Etter (side om side)</option>
+              <option value="split">Foran | Etter (−{collWindow} | +{collWindow})</option>
               <option value="before">Kun foran (−{collWindow} ord)</option>
               <option value="after">Kun etter (+{collWindow} ord)</option>
             </select>
           </div>
 
           <div className="field-inline">
-            <label htmlFor={winSelectId}>Vindu:</label>
+            <label htmlFor={winSelectId}>Vindu (lengde):</label>
             <select
               id={winSelectId}
               value={collWindow}
               onChange={(e) => setCollWindow(Number(e.target.value))}
             >
-              <option value={1}>±1 ord</option>
-              <option value={2}>±2 ord</option>
-              <option value={3}>±3 ord</option>
-              <option value={5}>±5 ord</option>
-              <option value={10}>±10 ord</option>
-              <option value={15}>±15 ord</option>
-              <option value={20}>±20 ord</option>
-              <option value={25}>±25 ord</option>
-              <option value={35}>±35 ord</option>
-              <option value={50}>±50 ord</option>
+              <option value={1}>1 ord</option>
+              <option value={2}>2 ord</option>
+              <option value={3}>3 ord</option>
+              <option value={5}>5 ord</option>
+              <option value={10}>10 ord</option>
+              <option value={15}>15 ord</option>
+              <option value={20}>20 ord</option>
+              <option value={25}>25 ord</option>
+              <option value={35}>35 ord</option>
+              <option value={50}>50 ord</option>
             </select>
           </div>
 
@@ -524,7 +524,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               (!mainData && !beforeData)
             }
           >
-            Excel (.xlsx)
+            {t.downloadExcel}
           </button>
         </div>
 
