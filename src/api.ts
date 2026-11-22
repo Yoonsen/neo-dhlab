@@ -99,11 +99,28 @@ export interface DispersionResponse {
   total?: number[][];
 }
 
+export interface CollocationSideMetrics {
+  counts: number;
+  dist: number | null;
+  bdist?: number;
+  sd?: number | null;
+  z?: number | null;
+}
+
 export interface CollocationRow {
   word: string;
   counts: number;
   dist: number | null;
   bdist: number;
+  sd?: number | null;
+  z?: number | null;
+  expected?: number | null;
+  ratio?: number | null;
+  pmi?: number | null;
+  ps?: number | null;
+  left?: CollocationSideMetrics | null;
+  right?: CollocationSideMetrics | null;
+  skew?: number | null;
 }
 
 export interface CollocationsDistResponse {
@@ -111,6 +128,8 @@ export interface CollocationsDistResponse {
   hits: number;
   books: number;
   mu0: number;
+  var0?: number;
+  windowTokens?: number;
   before: number;
   after: number;
   prior: number;
@@ -1615,6 +1634,8 @@ export async function fetchCollocationsDist(
     minCount?: number;
     prior?: number;
     limit?: number;
+    sides?: boolean;
+    expected?: boolean;
   },
   signal?: AbortSignal
 ): Promise<{ data: CollocationsDistResponse; clientMs: number }> {
@@ -1626,8 +1647,12 @@ export async function fetchCollocationsDist(
     perBook: options.perBook ?? 10,
     minCount: Math.max(2, options.minCount ?? 2),
     prior: options.prior ?? 2,
-    limit: options.limit ?? 1000,
+    limit: options.limit ?? 1500,
+    expected: options.expected ?? true,
   };
+  if (options.sides !== undefined) {
+    payload.sides = options.sides;
+  }
 
   if (parsed.hasWildcardOrGroup && parsed.termGroups) {
     payload.termGroups = parsed.termGroups;

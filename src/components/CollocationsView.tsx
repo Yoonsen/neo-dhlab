@@ -21,7 +21,7 @@ interface CollocationsViewProps {
 }
 
 type DirectionMode = 'both' | 'before' | 'after' | 'split';
-type SortBy = 'word' | 'counts' | 'bdist' | 'dist';
+type SortBy = 'word' | 'counts' | 'dist' | 'sd' | 'z' | 'ps' | 'pmi';
 type SortDir = 'asc' | 'desc';
 
 const DEFAULT_PUNCT_STOP = new Set([
@@ -87,8 +87,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(col);
-      // Naturlig standardretning: høyest frekvens først ('desc'), men lavest avstand / A–Å først ('asc')
-      setSortDir(col === 'counts' ? 'desc' : 'asc');
+      // Naturlig standardretning: høyest først ('desc') for counts, z, ps, pmi; lavest først ('asc') for word, dist, sd
+      setSortDir(
+        col === 'counts' || col === 'z' || col === 'ps' || col === 'pmi'
+          ? 'desc'
+          : 'asc'
+      );
     }
   };
 
@@ -267,8 +271,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
 
   // Filtrer og sorter en liste med CollocationRow
   const processRows = (
-    rows: CollocationRow[] | undefined,
-    mu0: number
+    rows: CollocationRow[] | undefined
   ): CollocationRow[] => {
     if (!rows) return [];
     const q = wordFilter.trim().toLowerCase();
@@ -286,51 +289,52 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       }
       if (sortBy === 'counts') {
         if (a.counts !== b.counts) return mul * (a.counts - b.counts);
-        return a.bdist - b.bdist;
+        return (a.dist ?? 999) - (b.dist ?? 999);
       }
-      if (sortBy === 'bdist') {
-        const aValid = a.dist !== null && Math.abs(a.bdist - mu0) > 1e-4;
-        const bValid = b.dist !== null && Math.abs(b.bdist - mu0) > 1e-4;
-        // Rader uten gyldig avstand (dist === null) legges alltid nederst uansett retning
-        if (aValid && !bValid) return -1;
-        if (!aValid && bValid) return 1;
-        if (a.bdist !== b.bdist) return mul * (a.bdist - b.bdist);
-        return b.counts - a.counts;
-      }
-      // sortBy === 'dist'
-      const aValid = a.dist !== null;
-      const bValid = b.dist !== null;
+
+      const getVal = (row: CollocationRow): number | null => {
+        if (sortBy === 'dist') return row.dist;
+        if (sortBy === 'sd') return row.sd ?? null;
+        if (sortBy === 'z') return row.z ?? null;
+        if (sortBy === 'ps') return row.ps ?? null;
+        if (sortBy === 'pmi') return row.pmi ?? null;
+        return null;
+      };
+
+      const aVal = getVal(a);
+      const bVal = getVal(b);
+      const aValid = aVal !== null && Number.isFinite(aVal);
+      const bValid = bVal !== null && Number.isFinite(bVal);
+      // Rader uten gyldig verdi (dist === null fordi counts < 5) legges alltid nederst
       if (aValid && !bValid) return -1;
       if (!aValid && bValid) return 1;
-      const aDist = a.dist ?? 999;
-      const bDist = b.dist ?? 999;
-      if (aDist !== bDist) return mul * (aDist - bDist);
+      if (!aValid && !bValid) return b.counts - a.counts;
+      if (aVal !== bVal) return mul * ((aVal as number) - (bVal as number));
       return b.counts - a.counts;
     });
   };
 
   const processedMain = useMemo(
-    () => processRows(mainData?.rows, mainData?.mu0 ?? 3),
+    () => processRows(mainData?.rows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hidePunct, mainData, sortBy, sortDir, wordFilter]
   );
 
   const processedBefore = useMemo(
-    () => processRows(beforeData?.rows, beforeData?.mu0 ?? 3),
+    () => processRows(beforeData?.rows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [beforeData, hidePunct, sortBy, sortDir, wordFilter]
   );
 
   const processedAfter = useMemo(
-    () => processRows(afterData?.rows, afterData?.mu0 ?? 3),
+    () => processRows(afterData?.rows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [afterData, hidePunct, sortBy, sortDir, wordFilter]
   );
 
-  const formatDistVal = (val: number | null, mu0: number, isBdist: boolean) => {
-    if (val === null) return '—';
-    if (isBdist && Math.abs(val - mu0) < 1e-4) return '—';
-    return val.toFixed(2);
+  const formatMetric = (val: number | null | undefined, digits = 2) => {
+    if (val === null || val === undefined || !Number.isFinite(val)) return '—';
+    return val.toFixed(digits);
   };
 
   const exportExcel = () => {
@@ -342,11 +346,17 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
           'foran_ord',
           'foran_antall',
           'foran_dist',
-          'foran_bdist',
+          'foran_sd',
+          'foran_z',
+          'foran_ps',
+          'foran_pmi',
           'etter_ord',
           'etter_antall',
           'etter_dist',
-          'etter_bdist',
+          'etter_sd',
+          'etter_z',
+          'etter_ps',
+          'etter_pmi',
         ],
       ];
       for (let i = 0; i < maxLen; i++) {
@@ -356,11 +366,17 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
           b?.word ?? '',
           b?.counts ?? '',
           b && b.dist !== null ? b.dist : '',
-          b && b.dist !== null ? b.bdist : '',
+          b && b.sd !== null && b.sd !== undefined ? b.sd : '',
+          b && b.z !== null && b.z !== undefined ? b.z : '',
+          b && b.ps !== null && b.ps !== undefined ? b.ps : '',
+          b && b.pmi !== null && b.pmi !== undefined ? b.pmi : '',
           a?.word ?? '',
           a?.counts ?? '',
           a && a.dist !== null ? a.dist : '',
-          a && a.dist !== null ? a.bdist : '',
+          a && a.sd !== null && a.sd !== undefined ? a.sd : '',
+          a && a.z !== null && a.z !== undefined ? a.z : '',
+          a && a.ps !== null && a.ps !== undefined ? a.ps : '',
+          a && a.pmi !== null && a.pmi !== undefined ? a.pmi : '',
         ]);
       }
       downloadExcelFile(
@@ -372,13 +388,30 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
 
     if (!mainData || processedMain.length === 0) return;
     const matrix: (string | number)[][] = [
-      ['word', 'counts', 'share_of_hits_pct', 'dist', 'bdist', 'mu0'],
+      [
+        'word',
+        'counts',
+        'share_of_hits_pct',
+        'dist',
+        'sd',
+        'z',
+        'ps',
+        'pmi',
+        'expected',
+        'ratio',
+        'mu0',
+      ],
       ...processedMain.map((r) => [
         r.word,
         r.counts,
         mainData.hits > 0 ? Number(((r.counts / mainData.hits) * 100).toFixed(2)) : 0,
         r.dist !== null ? r.dist : '',
-        r.dist !== null ? r.bdist : '',
+        r.sd !== null && r.sd !== undefined ? r.sd : '',
+        r.z !== null && r.z !== undefined ? r.z : '',
+        r.ps !== null && r.ps !== undefined ? r.ps : '',
+        r.pmi !== null && r.pmi !== undefined ? r.pmi : '',
+        r.expected !== null && r.expected !== undefined ? r.expected : '',
+        r.ratio !== null && r.ratio !== undefined ? r.ratio : '',
         mainData.mu0,
       ]),
     ];
@@ -550,8 +583,9 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             <span className="spinner" aria-hidden="true" />
             <div>
               <strong>
-                Beregner kollokasjoner og avstander (<code>dist</code> /{' '}
-                <code>bdist</code>) for «{parsed.raw}»…
+                Beregner kollokasjoner, avstand (<code>dist</code>,{' '}
+                <code>sd</code>, <code>z</code>) og Poisson-Stirling (
+                <code>ps</code>) for «{parsed.raw}»…
               </strong>
               <div className="muted" style={{ fontSize: '0.82rem' }}>
                 Utvalg: opptil {sampleSize.toLocaleString('nb-NO')} treff (maks{' '}
@@ -597,7 +631,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('counts')}
                   >
-                    <span>Antall (counts)</span>
+                    <span>Antall</span>
                     {renderSortArrow('counts')}
                   </button>
                 </th>
@@ -607,38 +641,80 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('counts')}
                   >
-                    <span>Andel av treff</span>
+                    <span>Andel</span>
                     {renderSortArrow('counts')}
                   </button>
                 </th>
                 <th
                   scope="col"
                   aria-sort={getAriaSort('dist')}
-                  title="Snittavstand i antall ord fra målordet/ankeret (1.00 = rett ved siden av)"
+                  title={`Snittavstand i antall ord fra målordet/ankeret (1.00 = rett ved siden av, nøytral μ₀ = ${mainData.mu0.toFixed(
+                    2
+                  )})`}
                 >
                   <button
                     type="button"
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('dist')}
                   >
-                    <span>Snittavstand (dist)</span>
+                    <span>Avstand (dist, μ₀={mainData.mu0.toFixed(1)})</span>
                     {renderSortArrow('dist')}
                   </button>
                 </th>
                 <th
                   scope="col"
-                  aria-sort={getAriaSort('bdist')}
-                  title={`Bayesiansk avstand trukket mot nøytral avstand μ₀ = ${mainData.mu0.toFixed(
-                    2
-                  )}. Lavere enn μ₀ betyr at ordet står tett inntil søkeordet.`}
+                  aria-sort={getAriaSort('sd')}
+                  title="Standardavvik for avstand i vinduet. Lav sd (nær 0) tyder på fast uttrykk i én bestemt posisjon."
                 >
                   <button
                     type="button"
                     className="th-sort-btn"
-                    onClick={() => handleHeaderSort('bdist')}
+                    onClick={() => handleHeaderSort('sd')}
                   >
-                    <span>Nærhet (bdist, μ₀={mainData.mu0.toFixed(1)})</span>
-                    {renderSortArrow('bdist')}
+                    <span>Spredning (sd)</span>
+                    {renderSortArrow('sd')}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  aria-sort={getAriaSort('z')}
+                  title="Avstands-z-score: (μ₀ − dist) / √(var₀ / n). Positiv verdi betyr at ordet står nærmere søkeordet enn tilfeldig forventet."
+                >
+                  <button
+                    type="button"
+                    className="th-sort-btn"
+                    onClick={() => handleHeaderSort('z')}
+                  >
+                    <span>Nærhets-z (z)</span>
+                    {renderSortArrow('z')}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  aria-sort={getAriaSort('ps')}
+                  title="Poisson-Stirling-assosiasjon: n · (ln n − ln λ − 1) mot forventet frekvens i korpuset."
+                >
+                  <button
+                    type="button"
+                    className="th-sort-btn"
+                    onClick={() => handleHeaderSort('ps')}
+                  >
+                    <span>Poisson-Stirling (ps)</span>
+                    {renderSortArrow('ps')}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  aria-sort={getAriaSort('pmi')}
+                  title="Pointwise Mutual Information: log₂(counts / expected)"
+                >
+                  <button
+                    type="button"
+                    className="th-sort-btn"
+                    onClick={() => handleHeaderSort('pmi')}
+                  >
+                    <span>PMI</span>
+                    {renderSortArrow('pmi')}
                   </button>
                 </th>
                 <th scope="col">Konkordans</th>
@@ -646,21 +722,19 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             </thead>
             <tbody>
               {processedMain.slice(0, 400).map((row, idx) => {
-                const validDist =
-                  row.dist !== null &&
-                  Math.abs(row.bdist - mainData.mu0) > 1e-4;
+                const validDist = row.dist !== null;
                 const sharePct =
                   mainData.hits > 0
                     ? ((row.counts / mainData.hits) * 100).toFixed(1)
                     : '0.0';
                 // Beregn en nærhetsindikator (hvor mye nærmere 1.0 ordet ligger enn mu0)
                 const closenessRatio =
-                  validDist && mainData.mu0 > 1
+                  validDist && row.dist !== null && mainData.mu0 > 1
                     ? Math.max(
                         0,
                         Math.min(
                           1,
-                          (mainData.mu0 - row.bdist) / (mainData.mu0 - 1)
+                          (mainData.mu0 - row.dist) / (mainData.mu0 - 1)
                         )
                       )
                     : 0;
@@ -675,25 +749,30 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       <strong>{row.counts.toLocaleString('nb-NO')}</strong>
                     </td>
                     <td className="muted">{sharePct} %</td>
-                    <td>{formatDistVal(row.dist, mainData.mu0, false)}</td>
                     <td>
                       <div className="bdist-cell">
-                        <strong>
-                          {formatDistVal(row.bdist, mainData.mu0, true)}
-                        </strong>
+                        <strong>{formatMetric(row.dist, 2)}</strong>
                         {validDist && closenessRatio > 0.05 && (
                           <span
                             className="closeness-bar"
                             style={{
-                              inlineSize: `${Math.round(closenessRatio * 56)}px`,
+                              inlineSize: `${Math.round(closenessRatio * 48)}px`,
                             }}
-                            title={`Tett på ankeret (bdist ${row.bdist.toFixed(
+                            title={`Tett på ankeret (dist ${row.dist?.toFixed(
                               2
                             )} vs. nøytral μ₀ ${mainData.mu0.toFixed(2)})`}
                           />
                         )}
                       </div>
                     </td>
+                    <td>{formatMetric(row.sd, 2)}</td>
+                    <td>
+                      <strong>{formatMetric(row.z, 2)}</strong>
+                    </td>
+                    <td>
+                      <strong>{formatMetric(row.ps, 1)}</strong>
+                    </td>
+                    <td>{formatMetric(row.pmi, 2)}</td>
                     <td>
                       <button
                         type="button"
@@ -751,14 +830,34 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       {renderSortArrow('dist')}
                     </button>
                   </th>
-                  <th scope="col" aria-sort={getAriaSort('bdist')}>
+                  <th scope="col" aria-sort={getAriaSort('sd')}>
                     <button
                       type="button"
                       className="th-sort-btn"
-                      onClick={() => handleHeaderSort('bdist')}
+                      onClick={() => handleHeaderSort('sd')}
                     >
-                      <span>bdist</span>
-                      {renderSortArrow('bdist')}
+                      <span>sd</span>
+                      {renderSortArrow('sd')}
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={getAriaSort('z')}>
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => handleHeaderSort('z')}
+                    >
+                      <span>z</span>
+                      {renderSortArrow('z')}
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={getAriaSort('ps')}>
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => handleHeaderSort('ps')}
+                    >
+                      <span>ps</span>
+                      {renderSortArrow('ps')}
                     </button>
                   </th>
                   <th scope="col">KWIC</th>
@@ -773,12 +872,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <td>
                       <strong>{row.counts.toLocaleString('nb-NO')}</strong>
                     </td>
-                    <td>{formatDistVal(row.dist, beforeData.mu0, false)}</td>
+                    <td>{formatMetric(row.dist, 2)}</td>
+                    <td>{formatMetric(row.sd, 2)}</td>
                     <td>
-                      <strong>
-                        {formatDistVal(row.bdist, beforeData.mu0, true)}
-                      </strong>
+                      <strong>{formatMetric(row.z, 2)}</strong>
                     </td>
+                    <td>{formatMetric(row.ps, 1)}</td>
                     <td>
                       <button
                         type="button"
@@ -831,14 +930,34 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       {renderSortArrow('dist')}
                     </button>
                   </th>
-                  <th scope="col" aria-sort={getAriaSort('bdist')}>
+                  <th scope="col" aria-sort={getAriaSort('sd')}>
                     <button
                       type="button"
                       className="th-sort-btn"
-                      onClick={() => handleHeaderSort('bdist')}
+                      onClick={() => handleHeaderSort('sd')}
                     >
-                      <span>bdist</span>
-                      {renderSortArrow('bdist')}
+                      <span>sd</span>
+                      {renderSortArrow('sd')}
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={getAriaSort('z')}>
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => handleHeaderSort('z')}
+                    >
+                      <span>z</span>
+                      {renderSortArrow('z')}
+                    </button>
+                  </th>
+                  <th scope="col" aria-sort={getAriaSort('ps')}>
+                    <button
+                      type="button"
+                      className="th-sort-btn"
+                      onClick={() => handleHeaderSort('ps')}
+                    >
+                      <span>ps</span>
+                      {renderSortArrow('ps')}
                     </button>
                   </th>
                   <th scope="col">KWIC</th>
@@ -853,12 +972,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <td>
                       <strong>{row.counts.toLocaleString('nb-NO')}</strong>
                     </td>
-                    <td>{formatDistVal(row.dist, afterData.mu0, false)}</td>
+                    <td>{formatMetric(row.dist, 2)}</td>
+                    <td>{formatMetric(row.sd, 2)}</td>
                     <td>
-                      <strong>
-                        {formatDistVal(row.bdist, afterData.mu0, true)}
-                      </strong>
+                      <strong>{formatMetric(row.z, 2)}</strong>
                     </td>
+                    <td>{formatMetric(row.ps, 1)}</td>
                     <td>
                       <button
                         type="button"
