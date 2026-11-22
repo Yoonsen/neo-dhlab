@@ -41,6 +41,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const langSelectId = useId();
   const authorInputId = useId();
   const subjectInputId = useId();
+  const ddcInputId = useId();
   const formSelectId = useId();
   const rawIdsId = useId();
 
@@ -57,6 +58,9 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const [subjectPrefix, setSubjectPrefix] = useState<string>('');
   const [subjectExact, setSubjectExact] = useState<string>('');
   const [subjectSuggestions, setSubjectSuggestions] = useState<FacetValue[]>([]);
+  const [ddcPrefix, setDdcPrefix] = useState<string>('');
+  const [ddcExact, setDdcExact] = useState<string>('');
+  const [ddcSuggestions, setDdcSuggestions] = useState<FacetValue[]>([]);
   const [rawIdsText, setRawIdsText] = useState<string>('');
 
   const [building, setBuilding] = useState<boolean>(false);
@@ -109,6 +113,29 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
       window.clearTimeout(timer);
     };
   }, [baseUrl, open, subjectExact, subjectPrefix]);
+
+  // Autofullføring for Dewey (ddc) etter 1+ siffer
+  useEffect(() => {
+    const q = ddcPrefix.trim().replace(/\*+$/, '');
+    if (!open || q.length < 1 || q === ddcExact) {
+      setDdcSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchCorpusFacets(baseUrl, { k: 'ddc', prefix: q, limit: 12 })
+        .then(({ data }) => {
+          if (!cancelled) setDdcSuggestions(data.values ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setDdcSuggestions([]);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [baseUrl, ddcExact, ddcPrefix, open]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -235,6 +262,16 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
           const capS = rawS.charAt(0).toUpperCase() + rawS.slice(1);
           nodes.push({ k: 'subjects', prefix: capS });
           labels.push(`emne:${capS}*`);
+        }
+      }
+      if (ddcPrefix.trim()) {
+        const rawD = ddcPrefix.trim().replace(/\*+$/, '');
+        if (ddcExact && rawD === ddcExact && !ddcPrefix.includes('*')) {
+          nodes.push({ k: 'ddc', v: ddcExact });
+          labels.push(`ddk:${ddcExact}`);
+        } else {
+          nodes.push({ k: 'ddc', prefix: rawD });
+          labels.push(`ddk:${rawD}*`);
         }
       }
 
@@ -559,6 +596,43 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
                     }}
                   >
                     <span>{f.value}</span>
+                    <span className="muted">({f.docs.toLocaleString('nb-NO')})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="field-stack" style={{ position: 'relative' }}>
+            <label htmlFor={ddcInputId}>Dewey / DDK (starter med)</label>
+            <input
+              id={ddcInputId}
+              type="text"
+              value={ddcPrefix}
+              placeholder="641 (mat) / 839.82 / 948.1"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              onChange={(e) => {
+                setDdcPrefix(e.target.value);
+                setDdcExact('');
+              }}
+            />
+            {ddcSuggestions.length > 0 && (
+              <div className="facet-suggest-list" role="listbox" aria-label="Dewey-forslag">
+                {ddcSuggestions.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className="facet-suggest-item"
+                    onClick={() => {
+                      setDdcPrefix(f.value);
+                      setDdcExact(f.value);
+                      setDdcSuggestions([]);
+                    }}
+                  >
+                    <span>
+                      <code>{f.value}</code>
+                    </span>
                     <span className="muted">({f.docs.toLocaleString('nb-NO')})</span>
                   </button>
                 ))}
