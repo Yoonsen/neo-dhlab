@@ -374,7 +374,10 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               <option value={5}>±5 ord</option>
               <option value={10}>±10 ord</option>
               <option value={15}>±15 ord</option>
+              <option value={20}>±20 ord</option>
               <option value={25}>±25 ord</option>
+              <option value={35}>±35 ord</option>
+              <option value={50}>±50 ord</option>
             </select>
           </div>
 
