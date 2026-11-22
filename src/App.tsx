@@ -578,20 +578,25 @@ export const App: React.FC = () => {
     dispersion: null,
   });
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: t.tabCounts },
-    { id: 'concordance', label: t.tabConcordance },
-    { id: 'collocations', label: 'Kollokasjoner' },
-    { id: 'trends', label: t.tabTrends },
-    { id: 'dispersion', label: 'Vonnegut-bue' },
+  const tabs: { id: TabId; label: string; icon: string }[] = [
+    { id: 'overview', label: t.tabCounts, icon: '∑' },
+    { id: 'concordance', label: t.tabConcordance, icon: '≡' },
+    { id: 'collocations', label: 'Kollokasjoner', icon: '◎' },
+    { id: 'trends', label: t.tabTrends, icon: '📈' },
+    { id: 'dispersion', label: 'Vonnegut-bue', icon: '〰' },
   ];
 
   const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {
     let nextIdx: number | null = null;
-    if (e.key === 'ArrowRight') nextIdx = (idx + 1) % tabs.length;
-    else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + tabs.length) % tabs.length;
-    else if (e.key === 'Home') nextIdx = 0;
-    else if (e.key === 'End') nextIdx = tabs.length - 1;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIdx = (idx + 1) % tabs.length;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIdx = (idx - 1 + tabs.length) % tabs.length;
+    } else if (e.key === 'Home') {
+      nextIdx = 0;
+    } else if (e.key === 'End') {
+      nextIdx = tabs.length - 1;
+    }
 
     if (nextIdx !== null) {
       e.preventDefault();
@@ -881,42 +886,10 @@ export const App: React.FC = () => {
         onTryQuery={handleSelectQuery}
       />
 
-      {/* HOVEDKORT: OPSJONER ØVERST -> SØKEFELT UNDER -> RESULTAT */}
+      {/* HOVEDARBEIDSFLATE: SØKEFELT ØVERST -> VENSTRE-RAIL + RESULTATPANEL */}
       <main className="main-workspace">
         <div className="tabs">
-          {/* Opsjoner i større font over søkefeltet */}
-          <div
-            role="tablist"
-            aria-label="Velg analysemodus"
-            className="tablist prominent-tablist"
-            {...({ focusgroup: 'tablist nomemory' } as Record<string, string>)}
-          >
-            {tabs.map((tabItem, idx) => {
-              const selected = activeTab === tabItem.id;
-              return (
-                <button
-                  key={tabItem.id}
-                  ref={(el) => {
-                    tabRefs.current[tabItem.id] = el;
-                  }}
-                  type="button"
-                  role="tab"
-                  id={`tab-${tabItem.id}`}
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  {...(selected
-                    ? ({ focusgroupstart: '' } as Record<string, string>)
-                    : {})}
-                  onClick={() => handleTabSelect(tabItem.id)}
-                  onKeyDown={(e) => handleTabKeyDown(e, idx)}
-                >
-                  {tabItem.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Søkefelt inne i arbeidsflaten under opsjonene */}
+          {/* Søkefelt øverst i arbeidsflaten */}
           <search className="inline-search-bar" aria-label="Søk i valgt modus">
             <form onSubmit={handleFormSubmit} className="command-form">
               <div className="omnibox-wrapper">
@@ -1039,137 +1012,177 @@ export const App: React.FC = () => {
             </form>
           </search>
 
-          {/* Aktiv fane-resultat */}
-          {activeTab === 'overview' && (
-            <div role="tabpanel" aria-labelledby="tab-overview">
-              <OverviewTab
-                baseUrl={baseUrl}
-                items={countItems}
-                pendingQueries={pendingCountQueries}
-                corpus={corpus}
-                loading={countLoading}
-                error={countError}
-                t={t}
-                onFetchConcordanceFor={(targetParsed) => {
-                  setSelectedConcQuery(targetParsed);
-                  setActiveTab('concordance');
-                  void executeConcordanceSearch(targetParsed, concOptions, corpus);
-                }}
-                onSelectQuery={handleSelectQuery}
-                onSwitchTab={handleTabSelect}
-              />
+          {/* Arbeidsflate under søkefeltet: Vertikal venstremeny (rail) + aktivt panel */}
+          <div className="workbench-body">
+            <div
+              role="tablist"
+              aria-orientation="vertical"
+              aria-label="Velg analysemodus"
+              className="tablist vertical-tablist"
+              {...({ focusgroup: 'tablist nomemory' } as Record<string, string>)}
+            >
+              {tabs.map((tabItem, idx) => {
+                const selected = activeTab === tabItem.id;
+                return (
+                  <button
+                    key={tabItem.id}
+                    ref={(el) => {
+                      tabRefs.current[tabItem.id] = el;
+                    }}
+                    type="button"
+                    role="tab"
+                    id={`tab-${tabItem.id}`}
+                    aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
+                    {...(selected
+                      ? ({ focusgroupstart: '' } as Record<string, string>)
+                      : {})}
+                    onClick={() => handleTabSelect(tabItem.id)}
+                    onKeyDown={(e) => handleTabKeyDown(e, idx)}
+                  >
+                    <span className="tab-rail-icon" aria-hidden="true">
+                      {tabItem.icon}
+                    </span>
+                    <span className="tab-rail-label">{tabItem.label}</span>
+                  </button>
+                );
+              })}
             </div>
-          )}
 
-          {activeTab === 'concordance' && (
-            <div role="tabpanel" aria-labelledby="tab-concordance">
-              <ConcordanceView
-                queryText={activeConcParsed.raw}
-                parsed={activeConcParsed}
-                parsedList={parsedList}
-                onSelectParsed={(p) => {
-                  setSelectedConcQuery(p);
-                  void executeConcordanceSearch(p, concOptions, corpus);
-                }}
-                data={concData}
-                metadataById={metadataById}
-                clientMs={concMs}
-                loading={concLoading}
-                error={concError}
-                limit={concOptions.limit}
-                before={concOptions.before}
-                after={concOptions.after}
-                t={t}
-                onOptionsChange={setConcOptions}
-                onFetch={() =>
-                  void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
-                }
-                onOpenDispersionForBook={(dhlabid) => {
-                  setSubmittedDispParsedList(parsedList);
-                  setDispersionBookIds((prev) =>
-                    prev.includes(dhlabid)
-                      ? prev
-                      : [dhlabid, ...prev].slice(0, 10)
-                  );
-                  setActiveTab('dispersion');
-                }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'collocations' && (
-            <div role="tabpanel" aria-labelledby="tab-collocations">
-              <CollocationsView
-                t={t}
-                baseUrl={baseUrl}
-                corpus={corpus}
-                parsed={activeCollParsed}
-                parsedList={submittedDispParsedList}
-                onSelectParsed={(p) => setSelectedCollQuery(p)}
-                onInspectInConcordance={(collocateWord) => {
-                  const baseTerm =
-                    activeCollParsed.anchorWord ??
-                    activeCollParsed.terms[0]?.replace(/^\^/, '') ??
-                    '';
-                  const pairQuery = baseTerm
-                    ? `^${baseTerm} ${collocateWord}`
-                    : collocateWord;
-                  const nextParsed = parseMultiSearchQuery(
-                    pairQuery,
-                    windowSize,
-                    symmetric
-                  )[0];
-                  if (nextParsed) {
-                    setSelectedConcQuery(nextParsed);
-                    setActiveTab('concordance');
-                    void executeConcordanceSearch(
-                      nextParsed,
-                      concOptions,
-                      corpus
-                    );
-                  }
-                }}
-              />
-            </div>
-          )}
-
-          {activeTab === 'trends' && (
-            <div role="tabpanel" aria-labelledby="tab-trends">
-              {trendError && (
-                <div className="panel-inner">
-                  <div role="alert" className="error-banner">
-                    {trendError}
-                  </div>
+            <div className="workbench-panel-area">
+              {/* Aktiv fane-resultat */}
+              {activeTab === 'overview' && (
+                <div role="tabpanel" aria-labelledby="tab-overview">
+                  <OverviewTab
+                    baseUrl={baseUrl}
+                    items={countItems}
+                    pendingQueries={pendingCountQueries}
+                    corpus={corpus}
+                    loading={countLoading}
+                    error={countError}
+                    t={t}
+                    onFetchConcordanceFor={(targetParsed) => {
+                      setSelectedConcQuery(targetParsed);
+                      setActiveTab('concordance');
+                      void executeConcordanceSearch(targetParsed, concOptions, corpus);
+                    }}
+                    onSelectQuery={handleSelectQuery}
+                    onSwitchTab={handleTabSelect}
+                  />
                 </div>
               )}
-              <TrendChart
-                seriesList={trendSeries}
-                pendingQueries={pendingTrendQueries}
-                loading={trendLoading}
-                t={t}
-              />
-            </div>
-          )}
 
-          {activeTab === 'dispersion' && (
-            <div role="tabpanel" aria-labelledby="tab-dispersion">
-              <DispersionView
-                t={t}
-                baseUrl={baseUrl}
-                corpus={corpus}
-                parsedList={submittedDispParsedList}
-                selectedBookIds={dispersionBookIds}
-                onSelectedBookIdsChange={setDispersionBookIds}
-                knownMetadata={metadataById}
-                onNewMetadata={mergeMetadataRows}
-                candidateBookIdsFromConcordance={
-                  concData
-                    ? Array.from(new Set(concData.rows.map((r) => r.dhlabid)))
-                    : []
-                }
-              />
+              {activeTab === 'concordance' && (
+                <div role="tabpanel" aria-labelledby="tab-concordance">
+                  <ConcordanceView
+                    queryText={activeConcParsed.raw}
+                    parsed={activeConcParsed}
+                    parsedList={parsedList}
+                    onSelectParsed={(p) => {
+                      setSelectedConcQuery(p);
+                      void executeConcordanceSearch(p, concOptions, corpus);
+                    }}
+                    data={concData}
+                    metadataById={metadataById}
+                    clientMs={concMs}
+                    loading={concLoading}
+                    error={concError}
+                    limit={concOptions.limit}
+                    before={concOptions.before}
+                    after={concOptions.after}
+                    t={t}
+                    onOptionsChange={setConcOptions}
+                    onFetch={() =>
+                      void executeConcordanceSearch(activeConcParsed, concOptions, corpus)
+                    }
+                    onOpenDispersionForBook={(dhlabid) => {
+                      setSubmittedDispParsedList(parsedList);
+                      setDispersionBookIds((prev) =>
+                        prev.includes(dhlabid)
+                          ? prev
+                          : [dhlabid, ...prev].slice(0, 10)
+                      );
+                      setActiveTab('dispersion');
+                    }}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'collocations' && (
+                <div role="tabpanel" aria-labelledby="tab-collocations">
+                  <CollocationsView
+                    t={t}
+                    baseUrl={baseUrl}
+                    corpus={corpus}
+                    parsed={activeCollParsed}
+                    parsedList={submittedDispParsedList}
+                    onSelectParsed={(p) => setSelectedCollQuery(p)}
+                    onInspectInConcordance={(collocateWord) => {
+                      const baseTerm =
+                        activeCollParsed.anchorWord ??
+                        activeCollParsed.terms[0]?.replace(/^\^/, '') ??
+                        '';
+                      const pairQuery = baseTerm
+                        ? `^${baseTerm} ${collocateWord}`
+                        : collocateWord;
+                      const nextParsed = parseMultiSearchQuery(
+                        pairQuery,
+                        windowSize,
+                        symmetric
+                      )[0];
+                      if (nextParsed) {
+                        setSelectedConcQuery(nextParsed);
+                        setActiveTab('concordance');
+                        void executeConcordanceSearch(
+                          nextParsed,
+                          concOptions,
+                          corpus
+                        );
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'trends' && (
+                <div role="tabpanel" aria-labelledby="tab-trends">
+                  {trendError && (
+                    <div className="panel-inner">
+                      <div role="alert" className="error-banner">
+                        {trendError}
+                      </div>
+                    </div>
+                  )}
+                  <TrendChart
+                    seriesList={trendSeries}
+                    pendingQueries={pendingTrendQueries}
+                    loading={trendLoading}
+                    t={t}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'dispersion' && (
+                <div role="tabpanel" aria-labelledby="tab-dispersion">
+                  <DispersionView
+                    t={t}
+                    baseUrl={baseUrl}
+                    corpus={corpus}
+                    parsedList={submittedDispParsedList}
+                    selectedBookIds={dispersionBookIds}
+                    onSelectedBookIdsChange={setDispersionBookIds}
+                    knownMetadata={metadataById}
+                    onNewMetadata={mergeMetadataRows}
+                    candidateBookIdsFromConcordance={
+                      concData
+                        ? Array.from(new Set(concData.rows.map((r) => r.dhlabid)))
+                        : []
+                    }
+                  />
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </main>
       </div>

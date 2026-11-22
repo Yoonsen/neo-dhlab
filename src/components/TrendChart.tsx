@@ -577,40 +577,40 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         </div>
       )}
 
-      {/* Legend cards */}
-      <div className="series-legend-row" role="status" aria-live="polite">
-        {computedSeries.map((s) => (
-          <div key={s.query} className="series-legend-card">
-            <span
-              className="series-swatch"
-              style={{ background: s.color }}
-              aria-hidden="true"
-            />
-            <strong>
-              <code>{s.query}</code>
-            </strong>
-            <span className="muted">
-              {s.totalHits.toLocaleString('nb-NO')} treff ·{' '}
-              {s.totalDocs.toLocaleString('nb-NO')} bøker (
-              {s.overallConcentration.toFixed(1)} treff/bok)
-            </span>
-            <span className="speed-pill">{s.clientMs} ms</span>
-          </div>
-        ))}
-
-        {pendingQueries.map((pq) => (
-          <div key={pq} className="series-legend-card series-pending">
-            <span className="spinner-mini" aria-hidden="true" />
-            <span>
-              Beregner <code>{pq}</code>…
-            </span>
-          </div>
-        ))}
-      </div>
+      {computedSeries.length === 0 && pendingQueries.length > 0 && (
+        <div className="series-legend-row" role="status" aria-live="polite">
+          {pendingQueries.map((pq) => (
+            <div key={pq} className="series-legend-card series-pending">
+              <span className="spinner-mini" aria-hidden="true" />
+              <span>
+                Beregner <code>{pq}</code>…
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {computedSeries.length > 0 && years.length > 0 && (
         <>
           <figure className="chart-figure">
+            <div className="chart-compact-key" aria-hidden="true">
+              {computedSeries.map((s) => (
+                <span key={s.query} className="chart-compact-key-item">
+                  <span
+                    className="series-swatch"
+                    style={{ background: s.color }}
+                  />
+                  <code>{s.query}</code>
+                </span>
+              ))}
+              {pendingQueries.map((pq) => (
+                <span key={pq} className="chart-compact-key-item series-pending">
+                  <span className="spinner-mini" />
+                  <code>{pq}</code>…
+                </span>
+              ))}
+            </div>
+
             <svg
               viewBox={`0 0 ${width} ${height}`}
               className="trend-svg"
@@ -794,6 +794,37 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               )}
             </figcaption>
           </figure>
+
+          {/* Detaljer for hvert søkeuttrykk UNDER trendlinjen */}
+          <div className="series-legend-row" role="status" aria-live="polite">
+            {computedSeries.map((s) => (
+              <div key={s.query} className="series-legend-card">
+                <span
+                  className="series-swatch"
+                  style={{ background: s.color }}
+                  aria-hidden="true"
+                />
+                <strong>
+                  <code>{s.query}</code>
+                </strong>
+                <span className="muted">
+                  {s.totalHits.toLocaleString('nb-NO')} treff ·{' '}
+                  {s.totalDocs.toLocaleString('nb-NO')} bøker (
+                  {s.overallConcentration.toFixed(1)} treff/bok)
+                </span>
+                <span className="speed-pill">{s.clientMs} ms</span>
+              </div>
+            ))}
+
+            {pendingQueries.map((pq) => (
+              <div key={pq} className="series-legend-card series-pending">
+                <span className="spinner-mini" aria-hidden="true" />
+                <span>
+                  Beregner <code>{pq}</code>…
+                </span>
+              </div>
+            ))}
+          </div>
 
           {showNumbers && (
             <div
