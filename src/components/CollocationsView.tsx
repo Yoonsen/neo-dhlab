@@ -104,7 +104,21 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
   const [afterData, setAfterData] = useState<CollocationsDistResponse | null>(null);
   const [clientMs, setClientMs] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [elapsedSec, setElapsedSec] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Oppdater medgått tid mens /collocations_dist jobber på serveren
+  useEffect(() => {
+    if (!loading) {
+      setElapsedSec(0);
+      return;
+    }
+    const t0 = performance.now();
+    const id = window.setInterval(() => {
+      setElapsedSec((performance.now() - t0) / 1000);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [loading]);
 
   // Hent kollokasjoner når aktivt uttrykk, korpus eller kollokasjonsinnstillinger endres
   useEffect(() => {
@@ -479,10 +493,25 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
         </div>
       )}
 
-      {loading && !mainData && !beforeData && (
-        <div role="status" aria-live="polite" className="loading-card">
-          <span className="spinner" aria-hidden="true" />
-          <span>Beregner kollokasjoner og avstander (dist / bdist)…</span>
+      {loading && (
+        <div role="status" aria-live="polite" className="coll-progress-card">
+          <div className="coll-progress-top">
+            <span className="spinner" aria-hidden="true" />
+            <div>
+              <strong>
+                Beregner kollokasjoner og avstander (<code>dist</code> /{' '}
+                <code>bdist</code>) for «{parsed.raw}»…
+              </strong>
+              <div className="muted" style={{ fontSize: '0.82rem' }}>
+                Utvalg: opptil {sampleSize.toLocaleString('nb-NO')} treff (maks{' '}
+                {perBook} pr. bok, vindu ±{collWindow} ord) ·{' '}
+                <strong>{elapsedSec.toFixed(1)} s</strong>
+              </div>
+            </div>
+          </div>
+          <div className="coll-progress-track" aria-hidden="true">
+            <div className="coll-progress-fill" />
+          </div>
         </div>
       )}
 
