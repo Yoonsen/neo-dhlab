@@ -264,10 +264,7 @@ export const App: React.FC = () => {
   );
 
   const activeConcParsed = useMemo(() => {
-    if (
-      selectedConcQuery &&
-      parsedList.some((p) => p.raw === selectedConcQuery.raw)
-    ) {
+    if (selectedConcQuery && selectedConcQuery.terms.length > 0) {
       return selectedConcQuery;
     }
     return parsedList[0] ?? parseMultiSearchQuery('', windowSize, symmetric)[0];
@@ -488,6 +485,8 @@ export const App: React.FC = () => {
     e.preventDefault();
     setHistoryOpen(false);
     rememberQuery(queryText);
+    setSelectedConcQuery(null);
+    setSelectedCollQuery(null);
     if (activeTab !== 'trends') setTrendSeries([]);
     if (activeTab !== 'concordance') setConcData(null);
     if (activeTab !== 'overview') setCountItems([]);
@@ -498,6 +497,8 @@ export const App: React.FC = () => {
     setQueryText(q);
     setHistoryOpen(false);
     rememberQuery(q);
+    setSelectedConcQuery(null);
+    setSelectedCollQuery(null);
     const nextList = parseMultiSearchQuery(q, windowSize, symmetric).filter(
       (p) => p.terms.length > 0
     );
@@ -1113,7 +1114,6 @@ export const App: React.FC = () => {
                   const pairQuery = baseTerm
                     ? `^${baseTerm} ${collocateWord}`
                     : collocateWord;
-                  setQueryText(pairQuery);
                   const nextParsed = parseMultiSearchQuery(
                     pairQuery,
                     windowSize,

@@ -45,6 +45,15 @@ const DEFAULT_PUNCT_STOP = new Set([
   '/',
 ]);
 
+interface CachedCollocationResult {
+  mainData: CollocationsDistResponse | null;
+  beforeData: CollocationsDistResponse | null;
+  afterData: CollocationsDistResponse | null;
+  clientMs: number;
+}
+
+const COLLOCATION_CACHE = new Map<string, CachedCollocationResult>();
+
 export const CollocationsView: React.FC<CollocationsViewProps> = ({
   t,
   baseUrl,
@@ -129,6 +138,34 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       return;
     }
 
+    const cacheKey = JSON.stringify({
+      raw: parsed.raw,
+      terms: parsed.terms,
+      termGroups: parsed.termGroups,
+      matchMode: parsed.matchMode,
+      win: parsed.window,
+      sym: parsed.symmetric,
+      corpus: corpus.enabled
+        ? corpus.corpusToken ?? corpus.filterIds.join(',')
+        : 'all',
+      dirMode,
+      collWindow,
+      foldCase,
+      sampleSize,
+      perBook,
+    });
+
+    const cached = COLLOCATION_CACHE.get(cacheKey);
+    if (cached) {
+      setMainData(cached.mainData);
+      setBeforeData(cached.beforeData);
+      setAfterData(cached.afterData);
+      setClientMs(cached.clientMs);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const ctrl = new AbortController();
     const run = async () => {
       setLoading(true);
@@ -175,10 +212,17 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             ),
           ]);
           if (ctrl.signal.aborted) return;
+          const totalMs = Math.round(performance.now() - t0) + extraMs;
           setBeforeData(resBefore.data);
           setAfterData(resAfter.data);
           setMainData(null);
-          setClientMs(Math.round(performance.now() - t0) + extraMs);
+          setClientMs(totalMs);
+          COLLOCATION_CACHE.set(cacheKey, {
+            mainData: null,
+            beforeData: resBefore.data,
+            afterData: resAfter.data,
+            clientMs: totalMs,
+          });
         } else {
           const before = dirMode === 'after' ? 0 : collWindow;
           const after = dirMode === 'before' ? 0 : collWindow;
@@ -197,10 +241,17 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             ctrl.signal
           );
           if (ctrl.signal.aborted) return;
+          const totalMs = cMs + extraMs;
           setMainData(data);
           setBeforeData(null);
           setAfterData(null);
-          setClientMs(cMs + extraMs);
+          setClientMs(totalMs);
+          COLLOCATION_CACHE.set(cacheKey, {
+            mainData: data,
+            beforeData: null,
+            afterData: null,
+            clientMs: totalMs,
+          });
         }
       } catch (err) {
         if (ctrl.signal.aborted) return;
