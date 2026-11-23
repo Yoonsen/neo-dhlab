@@ -166,8 +166,8 @@ export const App: React.FC = () => {
   const [pendingTrendQueries, setPendingTrendQueries] = useState<string[]>([]);
   const [trendLoading, setTrendLoading] = useState<boolean>(false);
   const [trendError, setTrendError] = useState<string | null>(null);
-  const [startYear] = useState<number>(1800);
-  const [endYear] = useState<number>(2025);
+  const [startYear] = useState<number>(1450);
+  const [endYear] = useState<number>(2026);
 
   // Concordance state
   const [selectedConcQuery, setSelectedConcQuery] = useState<ParsedQuery | null>(null);

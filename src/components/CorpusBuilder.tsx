@@ -48,8 +48,8 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
   const [customName, setCustomName] = useState<string>('');
   const [textFilter, setTextFilter] = useState<string>('');
   const [textWindow, setTextWindow] = useState<number>(5);
-  const [yearFrom, setYearFrom] = useState<string>('1800');
-  const [yearTo, setYearTo] = useState<string>('2026');
+  const [yearFrom, setYearFrom] = useState<string>('');
+  const [yearTo, setYearTo] = useState<string>('');
   const [lang, setLang] = useState<string>('');
   const [literaryForm, setLiteraryForm] = useState<string>('');
   const [authorPrefix, setAuthorPrefix] = useState<string>('');
@@ -489,7 +489,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearFrom}
-              placeholder="1800"
+              placeholder="Alle (f.eks. 1650 / 1800)"
               onChange={(e) => setYearFrom(e.target.value)}
             />
           </div>
@@ -500,7 +500,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearTo}
-              placeholder="2026"
+              placeholder="Alle (f.eks. 1850 / 2026)"
               onChange={(e) => setYearTo(e.target.value)}
             />
           </div>

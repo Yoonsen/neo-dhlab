@@ -44,17 +44,36 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const tableCaptionId = useId();
   const metricGroupName = useId();
   const smoothSelectId = useId();
+  const fromYearInputId = useId();
+  const toYearInputId = useId();
   const strokeWidthSliderId = useId();
   const strokeAlphaSliderId = useId();
 
   const [metric, setMetric] = useState<MetricType>('perMillion');
   const [smoothing, setSmoothing] = useState<number>(5);
+  const [yearFromInput, setYearFromInput] = useState<string>('');
+  const [yearToInput, setYearToInput] = useState<string>('');
   const [showNumbers, setShowNumbers] = useState<boolean>(false);
   const [showStyleBox, setShowStyleBox] = useState<boolean>(false);
   const [lineWidth, setLineWidth] = useState<number>(2.4);
   const [lineAlpha, setLineAlpha] = useState<number>(0.92);
   const [fillArea, setFillArea] = useState<boolean>(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const dataBounds = useMemo(() => {
+    if (seriesList.length === 0) return { min: 1473, max: 2026 };
+    const baseRows = seriesList[0].rows;
+    const firstWithBooks = baseRows.findIndex((r) => r.books > 0);
+    if (firstWithBooks === -1) return { min: 1473, max: 2026 };
+    let lastWithBooks = baseRows.length - 1;
+    while (lastWithBooks > firstWithBooks && baseRows[lastWithBooks].books === 0) {
+      lastWithBooks--;
+    }
+    return {
+      min: baseRows[firstWithBooks].year,
+      max: baseRows[lastWithBooks].year,
+    };
+  }, [seriesList]);
 
   const years = useMemo(() => {
     if (seriesList.length === 0) return [];
@@ -65,8 +84,22 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     while (lastWithBooks > firstWithBooks && baseRows[lastWithBooks].books === 0) {
       lastWithBooks--;
     }
-    return baseRows.slice(firstWithBooks, lastWithBooks + 1).map((r) => r.year);
-  }, [seriesList]);
+    const parsedFrom = parseInt(yearFromInput.trim(), 10);
+    const parsedTo = parseInt(yearToInput.trim(), 10);
+    const loYear =
+      !Number.isNaN(parsedFrom) && parsedFrom >= 1000
+        ? parsedFrom
+        : baseRows[firstWithBooks].year;
+    const hiYear =
+      !Number.isNaN(parsedTo) && parsedTo >= 1000
+        ? parsedTo
+        : baseRows[lastWithBooks].year;
+
+    return baseRows
+      .slice(firstWithBooks, lastWithBooks + 1)
+      .map((r) => r.year)
+      .filter((y) => y >= loYear && y <= hiYear);
+  }, [seriesList, yearFromInput, yearToInput]);
 
   const computedSeries = useMemo(() => {
     const base = seriesList.map((item) => {
@@ -466,6 +499,33 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         </fieldset>
 
         <div className="trend-controls-right">
+          <div className="field-inline">
+            <label htmlFor={fromYearInputId}>{t.yearLabel}:</label>
+            <input
+              id={fromYearInputId}
+              type="text"
+              inputMode="numeric"
+              className="year-input"
+              placeholder={String(dataBounds.min)}
+              value={yearFromInput}
+              onChange={(e) => setYearFromInput(e.target.value)}
+              aria-label={t.fromYear}
+              style={{ inlineSize: '4.3rem' }}
+            />
+            <span>–</span>
+            <input
+              id={toYearInputId}
+              type="text"
+              inputMode="numeric"
+              className="year-input"
+              placeholder={String(dataBounds.max)}
+              value={yearToInput}
+              onChange={(e) => setYearToInput(e.target.value)}
+              aria-label={t.toYear}
+              style={{ inlineSize: '4.3rem' }}
+            />
+          </div>
+
           <div className="field-inline">
             <label htmlFor={smoothSelectId}>{t.smoothingLabel}</label>
             <select
