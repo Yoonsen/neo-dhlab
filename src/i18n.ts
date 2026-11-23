@@ -10,6 +10,9 @@ export interface UiStrings {
   profileCalm: string;
   profilePeach: string;
   profileDark: string;
+  whatsNewBtn: string;
+  whatsNewTitle: string;
+  updateAvailableBtn: string;
   helpBtn: string;
   corpusBadge: string;
   wholeCollection: string;
@@ -193,6 +196,9 @@ export const TRANSLATIONS: Record<UiLang, UiStrings> = {
     profileCalm: 'Profil: Rolig',
     profilePeach: 'Profil: NB Fersken 20',
     profileDark: 'Profil: NB Aubergine (Mørk)',
+    whatsNewBtn: 'Nyheter',
+    whatsNewTitle: 'Hva er nytt i Neo-DHLAB',
+    updateAvailableBtn: '↻ Ny versjon klar – Oppdater',
     helpBtn: 'Om / Syntaks',
     corpusBadge: 'Korpus',
     wholeCollection: 'Hele boksamlingen',
@@ -390,6 +396,9 @@ export const TRANSLATIONS: Record<UiLang, UiStrings> = {
     profileCalm: 'Profile: Calm',
     profilePeach: 'Profile: NB Peach 20',
     profileDark: 'Profile: NB Aubergine (Dark)',
+    whatsNewBtn: "What's new",
+    whatsNewTitle: "What's new in Neo-DHLAB",
+    updateAvailableBtn: '↻ Update ready – Reload',
     helpBtn: 'About / Syntax',
     corpusBadge: 'Corpus',
     wholeCollection: 'Entire book collection',

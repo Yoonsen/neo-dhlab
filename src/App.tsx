@@ -15,6 +15,11 @@ import {
   parseMultiSearchQuery,
   resolveEffectiveCorpus,
 } from './api';
+import {
+  CURRENT_BUILD_ID,
+  CURRENT_CHANGELOG_VERSION,
+} from './changelog';
+import { ChangelogDialog } from './components/ChangelogDialog';
 import { CollocationsView } from './components/CollocationsView';
 import { ConcordanceView } from './components/ConcordanceView';
 import { CorpusBuilder } from './components/CorpusBuilder';
@@ -30,6 +35,7 @@ const RECENT_STORAGE_KEY = 'neo_dhlab_recent_queries_v1';
 const SAVED_CORPORA_KEY = 'neo_dhlab_saved_corpora_v1';
 const THEME_VOLUME_KEY = 'neo_dhlab_theme_volume_v1';
 const UI_LANG_KEY = 'neo_dhlab_ui_lang_v1';
+const SEEN_CHANGELOG_KEY = 'neo_dhlab_seen_changelog_v1';
 
 type ThemeVolume = 'calm' | 'peach' | 'dark';
 
@@ -142,8 +148,27 @@ export const App: React.FC = () => {
   });
   const [corpusDialogOpen, setCorpusDialogOpen] = useState<boolean>(false);
   const [helpDialogOpen, setHelpDialogOpen] = useState<boolean>(false);
+  const [changelogOpen, setChangelogOpen] = useState<boolean>(false);
+  const [hasUnreadChangelog, setHasUnreadChangelog] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SEEN_CHANGELOG_KEY) !== CURRENT_CHANGELOG_VERSION;
+    } catch {
+      return false;
+    }
+  });
+  const [updateAvailable, setUpdateAvailable] = useState<boolean>(false);
   const [savedCorpora, setSavedCorpora] = useState<SavedCorpusEntry[]>(loadSavedCorpora);
   const [corpusMenuOpen, setCorpusMenuOpen] = useState<boolean>(false);
+
+  const handleOpenChangelog = () => {
+    setChangelogOpen(true);
+    setHasUnreadChangelog(false);
+    try {
+      localStorage.setItem(SEEN_CHANGELOG_KEY, CURRENT_CHANGELOG_VERSION);
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   // Active option tab ABOVE the search input
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -291,6 +316,48 @@ export const App: React.FC = () => {
       })
       .catch(() => setHealth(null));
   }, [baseUrl]);
+
+  // Sjekk i bakgrunnen (ved vindusfokus og hvert 5. minutt) om en nyere build er rullet ut på GitHub Pages
+  useEffect(() => {
+    if (CURRENT_BUILD_ID === 'dev') return;
+    let cancelled = false;
+
+    const checkRemoteVersion = async () => {
+      try {
+        const res = await fetch(`./version.json?t=${Date.now()}`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { buildId?: string };
+        if (
+          !cancelled &&
+          json.buildId &&
+          json.buildId !== CURRENT_BUILD_ID
+        ) {
+          setUpdateAvailable(true);
+        }
+      } catch {
+        // ignore network errors during background version check
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void checkRemoteVersion();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    const intervalId = window.setInterval(() => {
+      void checkRemoteVersion();
+    }, 300_000);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // 1. Sequential counting queue
   const executeCountQueue = useCallback(
@@ -638,6 +705,16 @@ export const App: React.FC = () => {
           </a>
 
           <div className="header-right">
+            {updateAvailable && (
+              <button
+                type="button"
+                className="update-ready-pill"
+                onClick={() => window.location.reload()}
+              >
+                {t.updateAvailableBtn}
+              </button>
+            )}
+
             <select
               aria-label="Fargevolum (NB stilmanual)"
               className="volume-select"
@@ -650,6 +727,20 @@ export const App: React.FC = () => {
               <option value="peach">{t.profilePeach}</option>
               <option value="dark">{t.profileDark}</option>
             </select>
+
+            <button
+              type="button"
+              className="info-header-btn"
+              onClick={handleOpenChangelog}
+              aria-label={t.whatsNewTitle}
+              title={t.whatsNewTitle}
+            >
+              <span aria-hidden="true">✦</span>
+              <span>{t.whatsNewBtn}</span>
+              {(hasUnreadChangelog || updateAvailable) && (
+                <span className="unread-news-dot" aria-hidden="true" />
+              )}
+            </button>
 
             <button
               type="button"
@@ -884,6 +975,15 @@ export const App: React.FC = () => {
         t={t}
         onClose={() => setHelpDialogOpen(false)}
         onTryQuery={handleSelectQuery}
+      />
+
+      <ChangelogDialog
+        open={changelogOpen}
+        lang={uiLang}
+        t={t}
+        updateAvailable={updateAvailable}
+        onReloadForUpdate={() => window.location.reload()}
+        onClose={() => setChangelogOpen(false)}
       />
 
       {/* HOVEDARBEIDSFLATE: SØKEFELT ØVERST -> VENSTRE-RAIL + RESULTATPANEL */}
