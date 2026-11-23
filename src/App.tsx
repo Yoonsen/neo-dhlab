@@ -292,8 +292,11 @@ export const App: React.FC = () => {
     if (selectedConcQuery && selectedConcQuery.terms.length > 0) {
       return selectedConcQuery;
     }
-    return parsedList[0] ?? parseMultiSearchQuery('', windowSize, symmetric)[0];
-  }, [parsedList, selectedConcQuery, symmetric, windowSize]);
+    return (
+      submittedDispParsedList[0] ??
+      parseMultiSearchQuery('', windowSize, symmetric)[0]
+    );
+  }, [selectedConcQuery, submittedDispParsedList, symmetric, windowSize]);
 
   const activeCollParsed = useMemo(() => {
     if (
@@ -630,9 +633,10 @@ export const App: React.FC = () => {
     } else if (
       nextTab === 'concordance' &&
       !concData &&
-      activeConcParsed
+      parsedList[0]
     ) {
-      void executeConcordanceSearch(activeConcParsed, concOptions, corpus);
+      setSubmittedDispParsedList(parsedList);
+      void executeConcordanceSearch(parsedList[0], concOptions, corpus);
     } else if (nextTab === 'overview' && countItems.length === 0) {
       void executeCountQueue(parsedList, corpus);
     }
@@ -1178,7 +1182,7 @@ export const App: React.FC = () => {
                   <ConcordanceView
                     queryText={activeConcParsed.raw}
                     parsed={activeConcParsed}
-                    parsedList={parsedList}
+                    parsedList={submittedDispParsedList}
                     onSelectParsed={(p) => {
                       setSelectedConcQuery(p);
                       void executeConcordanceSearch(p, concOptions, corpus);

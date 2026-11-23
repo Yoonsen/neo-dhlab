@@ -231,6 +231,72 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
     );
   };
 
+  const renderedTableRows = React.useMemo(() => {
+    return sortedRows.map((row, i) => {
+      const { leftNode, hitNode, rightNode } = renderSegmentedRow(row);
+      const meta = metadataById[row.dhlabid];
+      const nbUrl = buildNbItemUrl(meta?.urn, parsed, row.hit);
+      const author = normalizeAuthorName(meta?.authors);
+      const title = meta?.title?.trim() || `dhlabid ${row.dhlabid}`;
+      const year = meta?.year;
+      const fullTooltip = [
+        title,
+        author || '',
+        year ? `${year}` : '',
+        meta?.urn ? `URN: ${meta.urn}` : `dhlabid: ${row.dhlabid}`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      return (
+        <tr key={`${row.dhlabid}-${i}`}>
+          <th scope="row" className="col-book-meta" title={fullTooltip}>
+            {nbUrl ? (
+              <a
+                href={nbUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="book-meta-link"
+              >
+                <span className="book-meta-title">{title}</span>
+                <span className="book-meta-sub">
+                  {year ? `${year}` : ''}
+                  {year && author ? ' · ' : ''}
+                  {author || ''}
+                </span>
+              </a>
+            ) : (
+              <div className="book-meta-fallback">
+                <span className="book-meta-title">{title}</span>
+                {(year || author) && (
+                  <span className="book-meta-sub">
+                    {year ? `${year}` : ''}
+                    {year && author ? ' · ' : ''}
+                    {author || ''}
+                  </span>
+                )}
+              </div>
+            )}
+          </th>
+          <td className="col-left">{leftNode}</td>
+          <td className="col-hit">{hitNode}</td>
+          <td className="col-right">{rightNode}</td>
+          <td className="col-arc">
+            <button
+              type="button"
+              className="btn-tiny arc-trigger-btn"
+              title={t.arcBtnTitle(title)}
+              onClick={() => onOpenDispersionForBook(row.dhlabid)}
+            >
+              {t.arcBtnLabel}
+            </button>
+          </td>
+        </tr>
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metadataById, parsed, sortedRows, t]);
+
   return (
     <div className="panel-inner">
       <div className="conc-toolbar">
@@ -392,70 +458,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {sortedRows.map((row, i) => {
-                const { leftNode, hitNode, rightNode } = renderSegmentedRow(row);
-                const meta = metadataById[row.dhlabid];
-                const nbUrl = buildNbItemUrl(meta?.urn, parsed, row.hit);
-                const author = normalizeAuthorName(meta?.authors);
-                const title = meta?.title?.trim() || `dhlabid ${row.dhlabid}`;
-                const year = meta?.year;
-                const fullTooltip = [
-                  title,
-                  author || '',
-                  year ? `${year}` : '',
-                  meta?.urn ? `URN: ${meta.urn}` : `dhlabid: ${row.dhlabid}`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ');
-
-                return (
-                  <tr key={`${row.dhlabid}-${i}`}>
-                    <th scope="row" className="col-book-meta" title={fullTooltip}>
-                      {nbUrl ? (
-                        <a
-                          href={nbUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="book-meta-link"
-                        >
-                          <span className="book-meta-title">{title}</span>
-                          <span className="book-meta-sub">
-                            {year ? `${year}` : ''}
-                            {year && author ? ' · ' : ''}
-                            {author || ''}
-                          </span>
-                        </a>
-                      ) : (
-                        <div className="book-meta-fallback">
-                          <span className="book-meta-title">{title}</span>
-                          {(year || author) && (
-                            <span className="book-meta-sub">
-                              {year ? `${year}` : ''}
-                              {year && author ? ' · ' : ''}
-                              {author || ''}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </th>
-                    <td className="col-left">{leftNode}</td>
-                    <td className="col-hit">{hitNode}</td>
-                    <td className="col-right">{rightNode}</td>
-                    <td className="col-arc">
-                      <button
-                        type="button"
-                        className="btn-tiny arc-trigger-btn"
-                        title={t.arcBtnTitle(title)}
-                        onClick={() => onOpenDispersionForBook(row.dhlabid)}
-                      >
-                        {t.arcBtnLabel}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
+            <tbody>{renderedTableRows}</tbody>
           </table>
         </div>
       )}
