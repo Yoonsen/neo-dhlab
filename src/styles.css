@@ -1589,6 +1589,17 @@ tbody th {
   font-weight: 600;
 }
 
+/* I konkordans (der bok-kolonnen er bred) og på smale skjermer skal første kolonne scrolle fritt med til venstre */
+.kwic-table tbody th {
+  position: static;
+}
+
+@media (max-width: 768px) {
+  tbody th {
+    position: static;
+  }
+}
+
 /* KWIC Concordance alignment */
 .kwic-table .col-dhlabid {
   inline-size: 110px;
