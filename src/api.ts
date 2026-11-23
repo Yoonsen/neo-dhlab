@@ -1532,7 +1532,7 @@ export async function fetchConcordancePublic(
   const payload: Record<string, unknown> = {
     before,
     after,
-    limit: Math.min(200, Math.max(1, options.limit)),
+    limit: Math.min(2000, Math.max(1, options.limit)),
   };
 
   if (parsed.hasWildcardOrGroup && parsed.termGroups) {

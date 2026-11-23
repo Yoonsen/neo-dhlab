@@ -389,7 +389,7 @@ export const TRANSLATIONS: Record<UiLang, UiStrings> = {
       'Søkemotoren forstår også FTS5-uttrykk (fra notebooks) og Elastic-nærhet (fra Nettbiblioteket). Dialekter kan ikke blandes i samme søk:',
     helpSec4Title: '4. Måltall i Trender og Telling',
     helpCopyright:
-      'Konkordansvisningen følger Nasjonalbibliotekets rammer for opphavsrett: maks 25 ord per utdrag (klippet ved avsnitt), maks 200 linjer og maks 10 % av hver bok.',
+      'Konkordansvisningen følger Nasjonalbibliotekets rammer for opphavsrett: maks 25 ord per utdrag (klippet ved avsnitt), maks 2 000 linjer og maks 10 % av hver bok.',
   },
   en: {
     brandSub: 'DHLAB · Corpus Engine',
@@ -590,6 +590,6 @@ export const TRANSLATIONS: Record<UiLang, UiStrings> = {
       'Also supports FTS5 expressions (from notebooks) and Elastic proximity. Dialects cannot be mixed within the same query:',
     helpSec4Title: '4. Metrics in Trends and Counts',
     helpCopyright:
-      'Concordances respect copyright limits: max 25 words per snippet (clipped at paragraph), max 200 lines, and max 10% of any book.',
+      'Concordances respect copyright limits: max 25 words per snippet (clipped at paragraph), max 2,000 lines, and max 10% of any book.',
   },
 };

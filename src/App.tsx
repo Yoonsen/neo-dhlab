@@ -496,13 +496,14 @@ export const App: React.FC = () => {
         setConcData(data);
         setConcMs(clientMs + extraMs);
 
-        // Hent bibliografiske metadata for alle unike dhlabid i konkordansen i ett raskt kall
+        // Hent bibliografiske metadata for alle unike dhlabid i konkordansen (i bolker på opptil 1000)
         const uniqueIds = Array.from(new Set(data.rows.map((r) => r.dhlabid)));
-        if (uniqueIds.length > 0) {
+        for (let offset = 0; offset < uniqueIds.length; offset += 1000) {
+          const batchIds = uniqueIds.slice(offset, offset + 1000);
           fetchMetadata(
             baseUrl,
             {
-              dhlabids: uniqueIds.slice(0, 1000),
+              dhlabids: batchIds,
               fields: ['urn', 'title', 'authors', 'year'],
             },
             signal
