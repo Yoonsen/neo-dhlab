@@ -433,10 +433,10 @@ button {
 }
 
 .upload-dropzone {
-  background: var(--surface-subtle);
+  background: var(--surface);
   border: 1.5px dashed var(--border);
   border-radius: var(--radius-sm);
-  padding: 1rem;
+  padding: 0.85rem 1rem;
 }
 
 .step-header-inline {
@@ -469,7 +469,7 @@ button {
   inline-size: min(560px, 92vw);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-subtle);
   color: var(--text);
   padding: 1.25rem;
   box-shadow: var(--shadow-float);
