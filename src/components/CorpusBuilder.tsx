@@ -324,7 +324,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
 
           const nearPayload = buildNearQueryPayload(parsedText, tempCorpus, {
             returnCorpus: true,
-            maxCorpusDocs: 100000,
+            maxCorpusDocs: 1000000,
           });
           const { data: nearData, clientMs: nearMs } = await fetchNearCount(
             baseUrl,

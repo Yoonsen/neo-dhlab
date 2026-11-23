@@ -1477,7 +1477,7 @@ export async function resolveEffectiveCorpus(
   for (const clause of parsed.corpusFilterClauses) {
     const payload = buildNearQueryPayload(clause, current, {
       returnCorpus: true,
-      maxCorpusDocs: 100000,
+      maxCorpusDocs: 1000000,
     });
     const { data, clientMs } = await fetchNearCount(baseUrl, payload, signal);
     extraMs += clientMs;
