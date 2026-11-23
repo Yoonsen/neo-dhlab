@@ -546,9 +546,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             aria-expanded={showStyleBox}
             onClick={() => setShowStyleBox((v) => !v)}
             disabled={computedSeries.length === 0}
-            title="Juster linjetykkelse, gjennomsiktighet (alpha) og fyll"
           >
-            Kurvestil ▾
+            {t.curveStyleBtn}
           </button>
 
           <button
@@ -565,7 +564,6 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             className="btn-secondary"
             onClick={exportPng}
             disabled={computedSeries.length === 0 || years.length === 0}
-            title="Last ned høyoppløselig PNG av grafen"
           >
             PNG
           </button>
@@ -582,10 +580,10 @@ export const TrendChart: React.FC<TrendChartProps> = ({
       </div>
 
       {showStyleBox && computedSeries.length > 0 && (
-        <div className="curve-style-toolbox" role="region" aria-label="Kurvestil">
+        <div className="curve-style-toolbox" role="region" aria-label={t.curveStyleBtn}>
           <div className="slider-wrap">
             <label htmlFor={strokeWidthSliderId}>
-              Tykkelse: <strong>{lineWidth.toFixed(1)} px</strong>
+              {t.curveThicknessLabel} <strong>{lineWidth.toFixed(1)} px</strong>
             </label>
             <input
               id={strokeWidthSliderId}
@@ -600,7 +598,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
           <div className="slider-wrap">
             <label htmlFor={strokeAlphaSliderId}>
-              Alpha (dekkevne): <strong>{Math.round(lineAlpha * 100)} %</strong>
+              {t.curveAlphaLabel} <strong>{Math.round(lineAlpha * 100)} %</strong>
             </label>
             <input
               id={strokeAlphaSliderId}
@@ -620,7 +618,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               checked={fillArea}
               onChange={(e) => setFillArea(e.target.checked)}
             />
-            <label htmlFor={`${strokeAlphaSliderId}-fill`}>Fyll under kurve</label>
+            <label htmlFor={`${strokeAlphaSliderId}-fill`}>{t.curveFillLabel}</label>
           </div>
 
           <button
@@ -632,7 +630,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               setFillArea(false);
             }}
           >
-            Nullstill
+            {t.curveResetBtn}
           </button>
         </div>
       )}

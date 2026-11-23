@@ -581,9 +581,9 @@ export const App: React.FC = () => {
   const tabs: { id: TabId; label: string; icon: string }[] = [
     { id: 'overview', label: t.tabCounts, icon: '∑' },
     { id: 'concordance', label: t.tabConcordance, icon: '≡' },
-    { id: 'collocations', label: 'Kollokasjoner', icon: '◎' },
+    { id: 'collocations', label: t.tabCollocations, icon: '◎' },
     { id: 'trends', label: t.tabTrends, icon: '📈' },
-    { id: 'dispersion', label: 'Vonnegut-bue', icon: '〰' },
+    { id: 'dispersion', label: t.tabDispersion, icon: '〰' },
   ];
 
   const handleTabKeyDown = (e: React.KeyboardEvent, idx: number) => {

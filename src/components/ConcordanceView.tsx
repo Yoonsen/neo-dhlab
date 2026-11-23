@@ -311,12 +311,12 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
       {loading && !data && (
         <div role="status" aria-live="polite" className="loading-card">
           <span className="spinner" aria-hidden="true" />
-          <span>Henter konkordanslinjer…</span>
+          <span>{t.loadingConcordance}</span>
         </div>
       )}
 
       {data && data.rows.length > 0 && groupLabels.length > 1 && (
-        <div className="conc-group-legend" aria-label="Fargeforklaring for søkeord">
+        <div className="conc-group-legend" aria-label={t.tabConcordance}>
           {groupLabels.map((gl) => (
             <span key={gl.groupIdx} className="conc-legend-item">
               <mark
@@ -340,7 +340,7 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
         >
           <table className="kwic-table">
             <caption id={captionId} className="visually-hidden">
-              Konkordans for {queryText}
+              {t.tabConcordance}: {queryText}
             </caption>
             <thead>
               <tr>
@@ -349,9 +349,8 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                     type="button"
                     className="th-sort-btn"
                     onClick={() => toggleSort('book')}
-                    title="Sorter på utgivelsesår / tittel"
                   >
-                    <span>Bok (Nettbiblioteket)</span>
+                    <span>{t.colBook}</span>
                     {renderSortArrow('book')}
                   </button>
                 </th>
@@ -360,7 +359,6 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                     type="button"
                     className="th-sort-btn th-sort-btn-end"
                     onClick={() => toggleSort('left')}
-                    title="Sorter på ordet rett til venstre for treffet"
                   >
                     <span>{t.colLeft}</span>
                     {renderSortArrow('left')}
@@ -381,14 +379,13 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                     type="button"
                     className="th-sort-btn"
                     onClick={() => toggleSort('right')}
-                    title="Sorter på ordet rett til høyre for treffet"
                   >
                     <span>{t.colRight}</span>
                     {renderSortArrow('right')}
                   </button>
                 </th>
                 <th scope="col" className="col-arc">
-                  Bue
+                  {t.colArc}
                 </th>
               </tr>
             </thead>
@@ -402,8 +399,8 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                 const year = meta?.year;
                 const fullTooltip = [
                   title,
-                  author ? `Forfatter: ${author}` : '',
-                  year ? `År: ${year}` : '',
+                  author || '',
+                  year ? `${year}` : '',
                   meta?.urn ? `URN: ${meta.urn}` : `dhlabid: ${row.dhlabid}`,
                 ]
                   .filter(Boolean)
@@ -446,10 +443,10 @@ export const ConcordanceView: React.FC<ConcordanceViewProps> = ({
                       <button
                         type="button"
                         className="btn-tiny arc-trigger-btn"
-                        title={`Vis Vonnegut-bue (narrativ bue) i «${title}»`}
+                        title={t.arcBtnTitle(title)}
                         onClick={() => onOpenDispersionForBook(row.dhlabid)}
                       >
-                        📈 Bue
+                        {t.arcBtnLabel}
                       </button>
                     </td>
                   </tr>

@@ -32,6 +32,7 @@ type MultiBookLayout = 'sum' | 'concat' | 'stack';
 type ValueMetric = 'per1000' | 'raw';
 
 export const DispersionView: React.FC<DispersionViewProps> = ({
+  t,
   baseUrl,
   corpus,
   parsedList,
@@ -798,30 +799,30 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
   return (
     <div className="panel-inner">
       {/* 1. BOKVELGER FRA KORPUS / KONKORDANS */}
-      <section className="arc-book-selector-card" aria-label="Velg bøker for Vonnegut-bue">
+      <section className="arc-book-selector-card" aria-label={t.tabDispersion}>
         <div className="arc-book-header">
           <div>
-            <strong>Vonnegut-bue · Bøker ({orderedSelectedIds.length}/10):</strong>{' '}
+            <strong>{t.dispHeaderTitle(orderedSelectedIds.length)}</strong>{' '}
             <span className="muted" style={{ fontSize: '0.84rem' }}>
-              Narrativ bue gjennom teksten – velg 1–10 bøker fra korpuset eller klikk «📈 Bue» i Konkordans
+              {t.dispHeaderSub}
             </span>
           </div>
 
           <form onSubmit={handleAddManualId} className="field-inline">
             <label htmlFor={bookPickerInputId} className="visually-hidden">
-              Filtrer bøker eller legg til dhlabid
+              {t.dispFilterPlaceholder}
             </label>
             <input
               id={bookPickerInputId}
               type="search"
-              placeholder="Filtrer tittel/forfatter eller dhlabid…"
+              placeholder={t.dispFilterPlaceholder}
               value={bookSearchText}
               onChange={(e) => setBookSearchText(e.target.value)}
               style={{ inlineSize: '250px', fontSize: '0.84rem' }}
             />
             {/^\d{8,10}$/.test(bookSearchText.trim()) && (
               <button type="submit" className="btn-tiny">
-                + Legg til ID
+                {t.dispAddIdBtn}
               </button>
             )}
           </form>
@@ -858,7 +859,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="selected-book-link"
-                        title="Åpne boka i Nettbiblioteket med søkeordene"
+                        title={title}
                       >
                         <strong>{title}</strong>
                       </a>
@@ -874,7 +875,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                   <button
                     type="button"
                     className="pill-clear-btn"
-                    aria-label={`Fjern ${title}`}
+                    aria-label={`${t.closeBtn} ${title}`}
                     onClick={() => toggleBook(id)}
                   >
                     ✕
@@ -889,7 +890,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                 className="btn-tiny"
                 onClick={() => onSelectedBookIdsChange([orderedSelectedIds[0]])}
               >
-                Behold kun første
+                {t.dispKeepFirstBtn}
               </button>
             )}
           </div>
@@ -926,51 +927,51 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
       <div className="trend-toolbar">
         <div className="conc-controls">
           <div className="field-inline">
-            <label htmlFor={modeSelectId}>Tekstakse:</label>
+            <label htmlFor={modeSelectId}>{t.dispAxisLabel}</label>
             <select
               id={modeSelectId}
               value={axisMode}
               onChange={(e) => setAxisMode(e.target.value as AxisMode)}
             >
-              <option value="bins">Relativ posisjon (0–100 % i {binsCount} deler)</option>
-              <option value="window">Faste tekstvinduer ({windowTokens} ord)</option>
+              <option value="bins">{t.dispAxisBins(binsCount)}</option>
+              <option value="window">{t.dispAxisWindow(windowTokens)}</option>
             </select>
           </div>
 
           {axisMode === 'bins' ? (
             <div className="field-inline">
-              <label htmlFor={`${modeSelectId}-bins`}>Deler:</label>
+              <label htmlFor={`${modeSelectId}-bins`}>{t.dispPartsLabel}</label>
               <select
                 id={`${modeSelectId}-bins`}
                 value={binsCount}
                 onChange={(e) => setBinsCount(Number(e.target.value))}
               >
-                <option value={20}>20 deler</option>
-                <option value={50}>50 deler</option>
-                <option value={100}>100 deler (%)</option>
-                <option value={200}>200 deler</option>
+                <option value={20}>{t.dispPartsOption(20)}</option>
+                <option value={50}>{t.dispPartsOption(50)}</option>
+                <option value={100}>{t.dispPartsOption(100)} (%)</option>
+                <option value={200}>{t.dispPartsOption(200)}</option>
               </select>
             </div>
           ) : (
             <div className="field-inline">
-              <label htmlFor={`${modeSelectId}-win`}>Ord/vindu:</label>
+              <label htmlFor={`${modeSelectId}-win`}>{t.dispWordsPerWinLabel}</label>
               <select
                 id={`${modeSelectId}-win`}
                 value={windowTokens}
                 onChange={(e) => setWindowTokens(Number(e.target.value))}
               >
-                <option value={250}>250 ord</option>
-                <option value={500}>500 ord</option>
-                <option value={1000}>1 000 ord</option>
-                <option value={2500}>2 500 ord</option>
-                <option value={5000}>5 000 ord</option>
+                <option value={250}>250 {t.wordsUnit}</option>
+                <option value={500}>500 {t.wordsUnit}</option>
+                <option value={1000}>1 000 {t.wordsUnit}</option>
+                <option value={2500}>2 500 {t.wordsUnit}</option>
+                <option value={5000}>5 000 {t.wordsUnit}</option>
               </select>
             </div>
           )}
 
           {orderedSelectedIds.length > 1 && (
             <div className="field-inline">
-              <label htmlFor={`${modeSelectId}-layout`}>Flere bøker:</label>
+              <label htmlFor={`${modeSelectId}-layout`}>{t.dispMultiBooksLabel}</label>
               <select
                 id={`${modeSelectId}-layout`}
                 value={multiLayout}
@@ -978,39 +979,39 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                   setMultiLayout(e.target.value as MultiBookLayout)
                 }
               >
-                <option value="concat">Etter hverandre (forfatterskap / tidslinje)</option>
-                <option value="stack">Under hverandre (én bue per bok)</option>
-                <option value="sum">Oppå hverandre (samlet 0–100 % profil)</option>
+                <option value="concat">{t.dispMultiConcat}</option>
+                <option value="stack">{t.dispMultiStack}</option>
+                <option value="sum">{t.dispMultiSum}</option>
               </select>
             </div>
           )}
 
           <div className="field-inline">
-            <label htmlFor={`${modeSelectId}-metric`}>Mål:</label>
+            <label htmlFor={`${modeSelectId}-metric`}>{t.dispMetricLabel}</label>
             <select
               id={`${modeSelectId}-metric`}
               value={valueMetric}
               onChange={(e) => setValueMetric(e.target.value as ValueMetric)}
             >
-              <option value="per1000">Pr. 1 000 ord</option>
-              <option value="raw">Antall treff i del/vindu</option>
+              <option value="per1000">{t.dispMetricPer1k}</option>
+              <option value="raw">{t.dispMetricRaw}</option>
             </select>
           </div>
         </div>
 
         <div className="trend-controls-right">
           <div className="field-inline">
-            <label htmlFor={smoothSelectId}>Glatting:</label>
+            <label htmlFor={smoothSelectId}>{t.smoothingLabel}:</label>
             <select
               id={smoothSelectId}
               value={smoothing}
               onChange={(e) => setSmoothing(Number(e.target.value))}
             >
-              <option value={1}>Ingen (1)</option>
-              <option value={3}>±1 del (3)</option>
-              <option value={5}>±2 deler (5)</option>
-              <option value={9}>±4 deler (9)</option>
-              <option value={15}>Vonnegut-bue (±7)</option>
+              <option value={1}>{t.dispSmooth1}</option>
+              <option value={3}>{t.dispSmooth3}</option>
+              <option value={5}>{t.dispSmooth5}</option>
+              <option value={9}>{t.dispSmooth9}</option>
+              <option value={15}>{t.dispSmooth15}</option>
             </select>
           </div>
 
@@ -1020,7 +1021,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
             aria-expanded={showStyleBox}
             onClick={() => setShowStyleBox((v) => !v)}
           >
-            Kurvestil ▾
+            {t.curveStyleBtn}
           </button>
 
           {mainChartData && (
@@ -1045,10 +1046,10 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
       </div>
 
       {showStyleBox && (
-        <div className="curve-style-toolbox" role="region" aria-label="Kurvestil">
+        <div className="curve-style-toolbox" role="region" aria-label={t.curveStyleBtn}>
           <div className="slider-wrap">
             <label htmlFor={strokeWidthSliderId}>
-              Tykkelse: <strong>{lineWidth.toFixed(1)} px</strong>
+              {t.curveThicknessLabel} <strong>{lineWidth.toFixed(1)} px</strong>
             </label>
             <input
               id={strokeWidthSliderId}
@@ -1063,7 +1064,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
 
           <div className="slider-wrap">
             <label htmlFor={strokeAlphaSliderId}>
-              Alpha (dekkevne): <strong>{Math.round(lineAlpha * 100)} %</strong>
+              {t.curveAlphaLabel} <strong>{Math.round(lineAlpha * 100)} %</strong>
             </label>
             <input
               id={strokeAlphaSliderId}
@@ -1083,7 +1084,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
               checked={fillArea}
               onChange={(e) => setFillArea(e.target.checked)}
             />
-            <label htmlFor={`${strokeAlphaSliderId}-fill`}>Fyll under kurve</label>
+            <label htmlFor={`${strokeAlphaSliderId}-fill`}>{t.curveFillLabel}</label>
           </div>
         </div>
       )}
@@ -1097,7 +1098,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
       {loading && !dispData && (
         <div role="status" aria-live="polite" className="loading-card">
           <span className="spinner" aria-hidden="true" />
-          <span>Beregner narrativ bue gjennom teksten…</span>
+          <span>{t.dispLoading}</span>
         </div>
       )}
 
@@ -1122,13 +1123,13 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                   <code>{lbl}</code>
                 </strong>
                 <span className="muted">
-                  {totalHits.toLocaleString('nb-NO')} treff i{' '}
+                  {totalHits.toLocaleString('nb-NO')} {t.colHits.toLowerCase()} ·{' '}
                   {orderedDispBooks.length}{' '}
-                  {orderedDispBooks.length === 1 ? 'bok' : 'bøker'} (
+                  {orderedDispBooks.length === 1 ? t.bookSingularUnit : t.booksUnit} (
                   {orderedDispBooks
                     .reduce((acc, b) => acc + b.tokens, 0)
                     .toLocaleString('nb-NO')}{' '}
-                  ord)
+                  {t.wordsUnit})
                 </span>
               </div>
             );
@@ -1356,11 +1357,13 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
             {hoverIdx !== null && hoverIdx < mainChartData.xCount ? (
               <div className="hover-multi-readout">
                 <strong>
-                  Del {hoverIdx + 1} / {mainChartData.xCount} (
-                  {Math.round(
-                    ((hoverIdx + 1) / Math.max(1, mainChartData.xCount)) * 100
-                  )}{' '}
-                  % ut i forløpet):
+                  {t.dispHoverSegment(
+                    hoverIdx + 1,
+                    mainChartData.xCount,
+                    Math.round(
+                      ((hoverIdx + 1) / Math.max(1, mainChartData.xCount)) * 100
+                    )
+                  )}
                 </strong>
                 {mainChartData.series.map((s) => (
                   <span key={s.label} className="hover-series-chip">
@@ -1371,17 +1374,16 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                     <code>{s.label}</code>:{' '}
                     <strong>
                       {(s.values[hoverIdx] ?? 0).toFixed(2)}{' '}
-                      {valueMetric === 'per1000' ? 'pr. 1k ord' : 'treff'}
+                      {valueMetric === 'per1000'
+                        ? t.dispPer1kUnit
+                        : t.colHits.toLowerCase()}
                     </strong>{' '}
-                    (rå: {s.rawCounts[hoverIdx] ?? 0})
+                    ({t.dispRawLabel}: {s.rawCounts[hoverIdx] ?? 0})
                   </span>
                 ))}
               </div>
             ) : (
-              <span>
-                Hold pekeren over den narrative buen for å se tetthet gjennom
-                teksten.
-              </span>
+              <span>{t.dispHoverHint}</span>
             )}
           </figcaption>
         </figure>
@@ -1411,7 +1413,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
                     </strong>{' '}
                     <span className="muted">
                       {author ? `${author} · ` : ''}
-                      {b.tokens.toLocaleString('nb-NO')} ord
+                      {b.tokens.toLocaleString('nb-NO')} {t.wordsUnit}
                     </span>
                   </div>
                   <svg
@@ -1491,10 +1493,7 @@ export const DispersionView: React.FC<DispersionViewProps> = ({
         )}
 
       {orderedSelectedIds.length === 0 && !loading && (
-        <div className="empty-box">
-          Velg en bok fra listen over (eller klikk «📈 Bue» på en linje i
-          Konkordans) for å se den narrative buen gjennom teksten.
-        </div>
+        <div className="empty-box">{t.dispEmptyHint}</div>
       )}
     </div>
   );

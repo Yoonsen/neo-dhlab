@@ -460,41 +460,41 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
           )}
 
           <div className="field-inline">
-            <label htmlFor={dirSelectId}>Retning:</label>
+            <label htmlFor={dirSelectId}>{t.collDirLabel}</label>
             <select
               id={dirSelectId}
               value={dirMode}
               onChange={(e) => setDirMode(e.target.value as DirectionMode)}
             >
-              <option value="both">Begge sider (±{collWindow} ord)</option>
-              <option value="split">Foran | Etter (−{collWindow} | +{collWindow})</option>
-              <option value="before">Kun foran (−{collWindow} ord)</option>
-              <option value="after">Kun etter (+{collWindow} ord)</option>
+              <option value="both">{t.collDirBoth(collWindow)}</option>
+              <option value="split">{t.collDirSplit(collWindow)}</option>
+              <option value="before">{t.collDirBefore(collWindow)}</option>
+              <option value="after">{t.collDirAfter(collWindow)}</option>
             </select>
           </div>
 
           <div className="field-inline">
-            <label htmlFor={winSelectId}>Vindu (lengde):</label>
+            <label htmlFor={winSelectId}>{t.collWinLabel}</label>
             <select
               id={winSelectId}
               value={collWindow}
               onChange={(e) => setCollWindow(Number(e.target.value))}
             >
-              <option value={1}>1 ord</option>
-              <option value={2}>2 ord</option>
-              <option value={3}>3 ord</option>
-              <option value={5}>5 ord</option>
-              <option value={10}>10 ord</option>
-              <option value={15}>15 ord</option>
-              <option value={20}>20 ord</option>
-              <option value={25}>25 ord</option>
-              <option value={35}>35 ord</option>
-              <option value={50}>50 ord</option>
+              <option value={1}>1 {t.wordsUnit}</option>
+              <option value={2}>2 {t.wordsUnit}</option>
+              <option value={3}>3 {t.wordsUnit}</option>
+              <option value={5}>5 {t.wordsUnit}</option>
+              <option value={10}>10 {t.wordsUnit}</option>
+              <option value={15}>15 {t.wordsUnit}</option>
+              <option value={20}>20 {t.wordsUnit}</option>
+              <option value={25}>25 {t.wordsUnit}</option>
+              <option value={35}>35 {t.wordsUnit}</option>
+              <option value={50}>50 {t.wordsUnit}</option>
             </select>
           </div>
 
-          <div className="field-inline" title="Antall treff i utvalget (sampleSize)">
-            <label htmlFor={sampleSelectId}>Utvalg (treff):</label>
+          <div className="field-inline" title="sampleSize">
+            <label htmlFor={sampleSelectId}>{t.collSampleLabel}</label>
             <select
               id={sampleSelectId}
               value={sampleSize}
@@ -509,22 +509,19 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             </select>
           </div>
 
-          <div
-            className="field-inline"
-            title="Maks antall treff per bok (perBook). 1 = bredest spredning over flest mulig bøker, 10–50 = raskere oppslag i færre bøker."
-          >
-            <label htmlFor={perBookSelectId}>Treff/bok:</label>
+          <div className="field-inline" title="perBook">
+            <label htmlFor={perBookSelectId}>{t.collPerBookLabel}</label>
             <select
               id={perBookSelectId}
               value={perBook}
               onChange={(e) => setPerBook(Number(e.target.value))}
             >
-              <option value={1}>1 (flest bøker)</option>
-              <option value={3}>3 pr. bok</option>
-              <option value={5}>5 pr. bok</option>
-              <option value={10}>10 pr. bok</option>
-              <option value={25}>25 pr. bok</option>
-              <option value={50}>50 pr. bok</option>
+              <option value={1}>{t.collPerBook1}</option>
+              <option value={3}>{t.collPerBookN(3)}</option>
+              <option value={5}>{t.collPerBookN(5)}</option>
+              <option value={10}>{t.collPerBookN(10)}</option>
+              <option value={25}>{t.collPerBookN(25)}</option>
+              <option value={50}>{t.collPerBookN(50)}</option>
             </select>
           </div>
 
@@ -535,7 +532,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               checked={foldCase}
               onChange={(e) => setFoldCase(e.target.checked)}
             />
-            <label htmlFor={foldCheckId}>Slå sammen A/a</label>
+            <label htmlFor={foldCheckId}>{t.collFoldLabel}</label>
           </div>
 
           <div className="checkbox-inline">
@@ -545,12 +542,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
               checked={hidePunct}
               onChange={(e) => setHidePunct(e.target.checked)}
             />
-            <label htmlFor={hidePunctCheckId}>Skjul tegn</label>
+            <label htmlFor={hidePunctCheckId}>{t.collHidePunctLabel}</label>
           </div>
 
           <div
             className="checkbox-inline"
-            title="Beregn forventet korpusfrekvens (expected = true) for å vise Poisson-Stirling (ps) og Ratio. Slå av for kun lokale mål (Antall, dist, sd, z)."
+            title="expected = true (Poisson-Stirling ps & Ratio)"
           >
             <input
               id={expectedCheckId}
@@ -563,12 +560,12 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
 
           <div className="field-inline">
             <label htmlFor={filterInputId} className="visually-hidden">
-              Filtrer ord i kollokasjonslisten
+              {t.collFilterPlaceholder}
             </label>
             <input
               id={filterInputId}
               type="search"
-              placeholder="Filtrer kollokat…"
+              placeholder={t.collFilterPlaceholder}
               value={wordFilter}
               onChange={(e) => setWordFilter(e.target.value)}
               style={{ inlineSize: '150px' }}
@@ -590,7 +587,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
 
         {activeStats && (
           <div className="muted" style={{ fontSize: '0.85rem' }}>
-            {activeStats.hits.toLocaleString('nb-NO')} treff fra{' '}
+            {activeStats.hits.toLocaleString('nb-NO')} {t.colHits.toLowerCase()} ·{' '}
             {activeStats.books.toLocaleString('nb-NO')} {t.booksUnit} · μ₀ ={' '}
             <strong>{activeStats.mu0.toFixed(2)}</strong> ·{' '}
             <strong className="speed-highlight">{clientMs} ms</strong>
@@ -610,19 +607,22 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             <span className="spinner" aria-hidden="true" />
             <div>
               <strong>
-                Beregner kollokasjoner (<code>dist</code>, <code>sd</code>,{' '}
+                {t.calculatingLabel} (<code>dist</code>, <code>sd</code>,{' '}
                 <code>z</code>
                 {includeExpected ? (
                   <>
                     , <code>ps</code>, <code>ratio</code>
                   </>
                 ) : null}
-                ) for «{parsed.raw}»…
+                ) — «{parsed.raw}»…
               </strong>
               <div className="muted" style={{ fontSize: '0.82rem' }}>
-                Utvalg: opptil {sampleSize.toLocaleString('nb-NO')} treff (maks{' '}
-                {perBook} pr. bok, vindu ±{collWindow} ord) ·{' '}
-                <strong>{elapsedSec.toFixed(1)} s</strong>
+                {t.collLoadingSub(
+                  sampleSize.toLocaleString('nb-NO'),
+                  perBook,
+                  collWindow
+                )}{' '}
+                · <strong>{elapsedSec.toFixed(1)} s</strong>
               </div>
             </div>
           </div>
@@ -642,7 +642,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
         >
           <table>
             <caption id={captionId} className="visually-hidden">
-              Kollokasjoner for {parsed.raw}
+              {t.tabCollocations}: {parsed.raw}
             </caption>
             <thead>
               <tr>
@@ -653,7 +653,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('word')}
                   >
-                    <span>Kollokat (ord)</span>
+                    <span>{t.collColWord}</span>
                     {renderSortArrow('word')}
                   </button>
                 </th>
@@ -663,7 +663,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('counts')}
                   >
-                    <span>Antall</span>
+                    <span>{t.collColCount}</span>
                     {renderSortArrow('counts')}
                   </button>
                 </th>
@@ -673,51 +673,49 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('counts')}
                   >
-                    <span>Andel</span>
+                    <span>{t.collColShare}</span>
                     {renderSortArrow('counts')}
                   </button>
                 </th>
                 <th
                   scope="col"
                   aria-sort={getAriaSort('dist')}
-                  title={`Snittavstand i antall ord fra målordet/ankeret (1.00 = rett ved siden av, nøytral μ₀ = ${mainData.mu0.toFixed(
-                    2
-                  )})`}
+                  title={`dist (μ₀ = ${mainData.mu0.toFixed(2)})`}
                 >
                   <button
                     type="button"
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('dist')}
                   >
-                    <span>Avstand (dist, μ₀={mainData.mu0.toFixed(1)})</span>
+                    <span>{t.collColDist(mainData.mu0.toFixed(1))}</span>
                     {renderSortArrow('dist')}
                   </button>
                 </th>
                 <th
                   scope="col"
                   aria-sort={getAriaSort('sd')}
-                  title="Standardavvik for avstand i vinduet. Lav sd (nær 0) tyder på fast uttrykk i én bestemt posisjon."
+                  title="Standard deviation of distance in window (low sd = fixed position)"
                 >
                   <button
                     type="button"
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('sd')}
                   >
-                    <span>Spredning (sd)</span>
+                    <span>{t.collColSd}</span>
                     {renderSortArrow('sd')}
                   </button>
                 </th>
                 <th
                   scope="col"
                   aria-sort={getAriaSort('z')}
-                  title="Avstands-z-score: (μ₀ − dist) / √(var₀ / n). Lokalt mål på masse og nærhet kombinert – positiv verdi betyr at ordet står nærmere søkeordet enn tilfeldig forventet."
+                  title="z = (μ₀ − dist) / √(var₀ / n)"
                 >
                   <button
                     type="button"
                     className="th-sort-btn"
                     onClick={() => handleHeaderSort('z')}
                   >
-                    <span>Nærhets-z (z)</span>
+                    <span>{t.collColZ}</span>
                     {renderSortArrow('z')}
                   </button>
                 </th>
@@ -726,7 +724,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <th
                       scope="col"
                       aria-sort={getAriaSort('ps')}
-                      title="Poisson-Stirling-assosiasjon: n · (ln n − ln λ − 1) mot forventet frekvens i korpuset."
+                      title="Poisson-Stirling: n · (ln n − ln λ − 1)"
                     >
                       <button
                         type="button"
@@ -740,7 +738,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     <th
                       scope="col"
                       aria-sort={getAriaSort('ratio')}
-                      title="Relativ overrepresentasjon p(x|y) / p(x) = counts / expected"
+                      title="p(x|y) / p(x) = counts / expected"
                     >
                       <button
                         type="button"
@@ -753,7 +751,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                     </th>
                   </>
                 )}
-                <th scope="col">Konkordans</th>
+                <th scope="col">{t.colConcordance}</th>
               </tr>
             </thead>
             <tbody>
@@ -794,9 +792,9 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                             style={{
                               inlineSize: `${Math.round(closenessRatio * 48)}px`,
                             }}
-                            title={`Tett på ankeret (dist ${row.dist?.toFixed(
+                            title={`dist ${row.dist?.toFixed(
                               2
-                            )} vs. nøytral μ₀ ${mainData.mu0.toFixed(2)})`}
+                            )} vs. μ₀ ${mainData.mu0.toFixed(2)}`}
                           />
                         )}
                       </div>
@@ -833,10 +831,14 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
       {/* 2. DELT VISNING: FORAN | ETTER SIDE OM SIDE */}
       {dirMode === 'split' && beforeData && afterData && (
         <div className="split-collocations-grid">
-          <div className="table-wrapper" tabIndex={0} role="region" aria-label="Ord foran søkeordet">
+          <div className="table-wrapper" tabIndex={0} role="region" aria-label={t.collColWordBefore}>
             <table>
               <caption className="table-caption">
-                ← Foran «{parsed.anchorWord ?? parsed.terms[0]?.replace(/^\^/, '')}» (−{collWindow} ord · μ₀={beforeData.mu0.toFixed(1)})
+                {t.collCaptionBefore(
+                  parsed.anchorWord ?? parsed.terms[0]?.replace(/^\^/, '') ?? '',
+                  collWindow,
+                  beforeData.mu0.toFixed(1)
+                )}
               </caption>
               <thead>
                 <tr>
@@ -846,7 +848,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       className="th-sort-btn"
                       onClick={() => handleHeaderSort('word')}
                     >
-                      <span>Ord foran</span>
+                      <span>{t.collColWordBefore}</span>
                       {renderSortArrow('word')}
                     </button>
                   </th>
@@ -856,7 +858,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       className="th-sort-btn"
                       onClick={() => handleHeaderSort('counts')}
                     >
-                      <span>Antall</span>
+                      <span>{t.collColCount}</span>
                       {renderSortArrow('counts')}
                     </button>
                   </th>
@@ -952,10 +954,14 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
             </table>
           </div>
 
-          <div className="table-wrapper" tabIndex={0} role="region" aria-label="Ord etter søkeordet">
+          <div className="table-wrapper" tabIndex={0} role="region" aria-label={t.collColWordAfter}>
             <table>
               <caption className="table-caption">
-                Etter «{parsed.anchorWord ?? parsed.terms[0]?.replace(/^\^/, '')}» → (+{collWindow} ord · μ₀={afterData.mu0.toFixed(1)})
+                {t.collCaptionAfter(
+                  parsed.anchorWord ?? parsed.terms[0]?.replace(/^\^/, '') ?? '',
+                  collWindow,
+                  afterData.mu0.toFixed(1)
+                )}
               </caption>
               <thead>
                 <tr>
@@ -965,7 +971,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       className="th-sort-btn"
                       onClick={() => handleHeaderSort('word')}
                     >
-                      <span>Ord etter</span>
+                      <span>{t.collColWordAfter}</span>
                       {renderSortArrow('word')}
                     </button>
                   </th>
@@ -975,7 +981,7 @@ export const CollocationsView: React.FC<CollocationsViewProps> = ({
                       className="th-sort-btn"
                       onClick={() => handleHeaderSort('counts')}
                     >
-                      <span>Antall</span>
+                      <span>{t.collColCount}</span>
                       {renderSortArrow('counts')}
                     </button>
                   </th>

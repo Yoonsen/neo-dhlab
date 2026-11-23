@@ -489,7 +489,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearFrom}
-              placeholder="Alle (f.eks. 1650 / 1800)"
+              placeholder={t.yearPlaceholderFrom}
               onChange={(e) => setYearFrom(e.target.value)}
             />
           </div>
@@ -500,7 +500,7 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
               type="text"
               inputMode="numeric"
               value={yearTo}
-              placeholder="Alle (f.eks. 1850 / 2026)"
+              placeholder={t.yearPlaceholderTo}
               onChange={(e) => setYearTo(e.target.value)}
             />
           </div>
@@ -603,12 +603,12 @@ export const CorpusBuilder: React.FC<CorpusBuilderProps> = ({
             )}
           </div>
           <div className="field-stack" style={{ position: 'relative' }}>
-            <label htmlFor={ddcInputId}>Dewey / DDK (starter med)</label>
+            <label htmlFor={ddcInputId}>{t.ddcLabel}</label>
             <input
               id={ddcInputId}
               type="text"
               value={ddcPrefix}
-              placeholder="641 (mat) / 839.82 / 948.1"
+              placeholder={t.ddcPlaceholder}
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
