@@ -1,14 +1,16 @@
-// Records a narrated walkthrough of Neo-DHLAB.
-// Output: frames/ (jpeg + timestamps), timeline.json (scene start times + narration files).
+// Records a narrated walkthrough of Neo-DHLAB from a scenario file.
+// Usage: node record.mjs [scenarios/<name>.mjs]   (default scenarios/intro.mjs)
+// Output: out/<name>/ with frames/, audio/, timeline.json (and fail.png if a step fails).
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const S = (await import(process.env.DEMO_SCENARIO ? path.resolve(process.env.DEMO_SCENARIO) : './scenario.mjs')).default;
-
-// Working files (frames, narration, timeline) go to DEMO_WORK_DIR, default ./out (gitignored).
-const OUT = path.resolve(process.env.DEMO_WORK_DIR || path.join(path.dirname(new URL(import.meta.url).pathname), 'out'));
+const HERE = path.dirname(new URL(import.meta.url).pathname);
+const SCENARIO = path.resolve(process.argv[2] || path.join(HERE, 'scenarios', 'intro.mjs'));
+const S = (await import(SCENARIO)).default;
+const NAME = path.basename(SCENARIO, '.mjs');
+const OUT = path.resolve(process.env.DEMO_WORK_DIR || path.join(HERE, 'out', NAME));
 const FRAMES = path.join(OUT, 'frames');
 const AUDIO = path.join(OUT, 'audio');
 const APP_URL = process.env.APP_URL || 'http://localhost:5180/';
@@ -26,6 +28,7 @@ function tts(text) {
     .replace(/DHLAB/g, 'D H lab')
     .replace(/1473/g, 'fjorten-syttitre')
     .replace(/Om \/ Syntaks/g, 'Om, Syntaks')
+    .replace(/\bOR\b/g, 'O R')
     .replace(/\^/g, '');
   const file = path.join(AUDIO, `s${String(++ttsIdx).padStart(2, '0')}.aiff`);
   execFileSync('say', ['-v', 'Nora', '-r', '178', '-o', file, spoken]);
@@ -162,129 +165,102 @@ async function scene(id, text, actions = async () => {}, { cap = text } = {}) {
   if (left > 0) await sleep(left * 1000);
 }
 
-// ---------- script (choices come from scenario.mjs) ----------
+// ---------- helpers handed to scenario scenes ----------
 const dlg = () => page.locator('dialog[open]');
+const d = {
+  page, sleep, waitIdle, moveTo, click, typeInto, search, tab, raise,
+  // Common places to point at
+  ui: {
+    corpusBar: () => page.locator('.context-bar-card'),
+    results: () => page.locator('table:visible, .result-hero-card:visible').first(),
+    chart: () => page.locator('.chart-figure:visible').first(),
+    kwicHit: () => page.locator('.kwic-table tbody .col-hit').first(),
+    windowSlider: () => page.locator('input[type=range]:visible').first(),
+    yearFrom: () => page.locator('.year-input:visible').first(),
+    yearTo: () => page.locator('.year-input:visible').nth(1),
+    label: (text) => page.getByText(text, { exact: true }).first(),
+    column: (text) => page.locator('thead th', { hasText: text }).first(),
+    collSampleSize: () => page.locator('[title=sampleSize] select'),
+  },
+  async goTab(name) {
+    await click(tab(name));
+    await waitIdle(600);
+  },
+  async select(locator, value) {
+    await moveTo(locator);
+    await locator.selectOption(String(value));
+    await sleep(400);
+  },
+  async setYears(from, to) {
+    if (from) await typeInto(d.ui.yearFrom(), String(from));
+    if (to) await typeInto(d.ui.yearTo(), String(to));
+    await sleep(500);
+  },
+  async sortBy(column) {
+    await click(d.ui.column(column));
+    await waitIdle(400);
+  },
+  /** Opens «Definer korpus…» and fills the given fields (empty ones are skipped). Does not submit. */
+  async defineCorpus({ name, author, authorPick, fromYear, toYear, lang, form } = {}) {
+    await click(page.getByRole('button', { name: /Definer korpus|Nytt \/ endre korpus/ }));
+    await raise();
+    await sleep(400);
+    if (name) await typeInto(dlg().getByLabel(/Navn på korpus/), name);
+    if (fromYear) await typeInto(dlg().getByLabel('Fra år', { exact: true }), String(fromYear));
+    if (toYear) await typeInto(dlg().getByLabel('Til år', { exact: true }), String(toYear));
+    if (lang) await d.select(dlg().getByLabel('Språk', { exact: true }), lang);
+    if (form) await d.select(dlg().getByLabel('Litterær form', { exact: true }), form);
+    if (author) {
+      await typeInto(dlg().getByLabel(/Forfatter/), author);
+      await sleep(1500);
+      if (authorPick) {
+        const sugg = page.locator('.facet-suggest-item', { hasText: authorPick }).first();
+        if (await sugg.count()) await click(sugg);
+        else console.warn(`defineCorpus: no author suggestion containing "${authorPick}"`);
+      }
+    }
+  },
+  async applyCorpus() {
+    await click(page.getByRole('button', { name: 'Bruk korpus' }));
+    await waitIdle(800);
+  },
+  /** Vonnegut tab: picks the first corpus book matching `filter` and deselects all others. */
+  async pickArcBook(filter) {
+    await typeInto(page.getByPlaceholder('Filtrer tittel/forfatter eller dhlabid…'), filter);
+    await sleep(800);
+    const chip = page.locator('.candidate-book-chip').first();
+    if (!(await chip.count())) throw new Error(`pickArcBook: no book in the corpus matches "${filter}"`);
+    await click(chip);
+    await sleep(500);
+    for (let i = 0; i < 10; i++) {
+      const pills = page.locator('.selected-book-pill').filter({ hasNotText: filter });
+      if (!(await pills.count())) break;
+      await click(pills.first().locator('.pill-clear-btn'));
+    }
+    await waitIdle(800);
+  },
+  async openHelp() {
+    await click(page.locator('button', { hasText: 'Om / Syntaks' }).first());
+    await raise();
+    await sleep(1500);
+  },
+};
+
+// ---------- run the scenario ----------
 await waitIdle(300);
 await card(S.title, S.subtitle, true);
 await sleep(1000);
 await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: 1920, maxHeight: 1080 });
 t0Holder.t = Date.now() / 1000;
-await scene('welcome', S.welcome.say, async () => { await sleep(1200); }, { cap: '' });
+await scene('welcome', S.welcome, async () => { await sleep(1200); }, { cap: '' });
 await card(S.title, S.subtitle, false);
 await sleep(700);
-
-await scene('overview', S.overview.say, async () => {
-  await moveTo(page.locator('.context-bar-card'));
-});
-
-await scene('search', S.search.say, async () => {
-  await click(tab('Telling'));
-  await search(S.search.query);
-});
-
-await scene('counts', S.counts.say, async () => {
-  await moveTo(page.locator('table:visible, .result-hero-card:visible').first());
-});
-
-await scene('trends', S.trends.say, async () => {
-  await click(tab('Trender'));
-  await waitIdle(600);
-  await moveTo(page.locator('.chart-figure:visible').first());
-});
-
-await scene('trendsZoom', S.trendsZoom.say, async () => {
-  if (S.trendsZoom.metricLabel) await click(page.getByText(S.trendsZoom.metricLabel, { exact: true }));
-  await sleep(500);
-  if (S.trendsZoom.fromYear) await typeInto(page.locator('.year-input:visible').first(), S.trendsZoom.fromYear);
-  await sleep(600);
-});
-
-await scene('concordance', S.concordance.say, async () => {
-  await click(tab('Konkordans'));
-  await waitIdle(600);
-  await moveTo(page.locator('.kwic-table tbody .col-hit').first());
-});
-
-await scene('anchor', S.anchor.say, async () => {
-  await search(S.anchor.query);
-  await moveTo(page.locator('input[type=range]:visible').first());
-}, { cap: S.anchor.cap ?? S.anchor.say });
-
-await scene('collocations', S.collocations.say, async () => {
-  await click(tab('Kollokasjoner'));
-  await search(S.collocations.query);
-  if (S.collocations.sortBy) {
-    await click(page.locator('thead th', { hasText: S.collocations.sortBy }).first());
-    await waitIdle(400);
-  }
-});
-
-await scene('corpus', S.corpus.say, async () => {
-  const c = S.corpus;
-  await click(tab('Telling'));
-  await waitIdle(300);
-  await click(page.getByRole('button', { name: 'Definer korpus…' }));
-  await raise();
-  await sleep(400);
-  if (c.name) await typeInto(dlg().getByLabel(/Navn på korpus/), c.name);
-  if (c.fromYear) await typeInto(dlg().getByLabel('Fra år', { exact: true }), c.fromYear);
-  if (c.toYear) await typeInto(dlg().getByLabel('Til år', { exact: true }), c.toYear);
-  for (const [label, value] of [['Språk', c.lang], ['Litterær form', c.form]]) {
-    if (!value) continue;
-    const sel = dlg().getByLabel(label, { exact: true });
-    await moveTo(sel);
-    await sel.selectOption(value);
-    await sleep(400);
-  }
-  if (c.author) {
-    await typeInto(dlg().getByLabel(/Forfatter/), c.author);
-    await sleep(1500);
-    if (c.authorPick) {
-      const sugg = page.locator('.facet-suggest-item', { hasText: c.authorPick }).first();
-      if (await sugg.count()) await click(sugg);
-      else console.warn(`corpus: no author suggestion containing "${c.authorPick}"`);
-    }
-  }
-});
-
-await scene('corpusInUse', S.corpusInUse.say, async () => {
-  await click(page.getByRole('button', { name: 'Bruk korpus' }));
-  await waitIdle(800);
-  await moveTo(page.locator('.context-bar-card'));
-  await search(S.corpusInUse.query);
-  await moveTo(page.locator('table:visible, .result-hero-card:visible').first()).catch(() => {});
-});
-
-await scene('arc', S.arc.say, async () => {
-  await click(tab('Vonnegut-bue'));
-  await waitIdle(600);
-});
-
-await scene('arcBook', S.arcBook.say, async () => {
-  const want = S.arcBook.filter;
-  await typeInto(page.getByPlaceholder('Filtrer tittel/forfatter eller dhlabid…'), want);
-  await sleep(800);
-  const chip = page.locator('.candidate-book-chip').first();
-  if (!(await chip.count())) throw new Error(`arcBook: no book in the corpus matches "${want}"`);
-  await click(chip);
-  await sleep(500);
-  for (let i = 0; i < 10; i++) {
-    const pills = page.locator('.selected-book-pill').filter({ hasNotText: want });
-    if (!(await pills.count())) break;
-    await click(pills.first().locator('.pill-clear-btn'));
-  }
-  await waitIdle(800);
-  await moveTo(page.locator('.chart-figure:visible').first());
-});
-
-await scene('help', S.help.say, async () => {
-  await click(page.locator('button', { hasText: 'Om / Syntaks' }).first());
-  await raise();
-  await sleep(1500);
-});
+for (const sc of S.scenes) {
+  await scene(sc.id, sc.say, () => sc.do(d), { cap: sc.cap ?? sc.say });
+}
 await sleep(800);
 await caption('');
-await card(S.title, S.endSubtitle, true);
+await card(S.title, S.endSubtitle ?? 'yoonsen.github.io/neo-dhlab', true);
 await sleep(3000);
 
 const tEnd = Date.now() / 1000;

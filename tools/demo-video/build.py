@@ -1,14 +1,17 @@
 """Assemble frames + narration from record.mjs into an MP4 with soft Norwegian subtitles.
 
-Usage: python3 build.py [output.mp4]   (reads DEMO_WORK_DIR, default ./out)
+Usage: python3 build.py <scenario-name> [output.mp4]
+Reads out/<scenario-name>/ (or DEMO_WORK_DIR); default output out/<name>/<name>.mp4 plus .srt.
 """
 import json
 import os
 import subprocess
 import sys
 
-here = os.path.abspath(os.environ.get("DEMO_WORK_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
-out = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(here, "neo-dhlab-intro.mp4")
+base = os.path.dirname(os.path.abspath(__file__))
+name = sys.argv[1] if len(sys.argv) > 1 else "intro"
+here = os.path.abspath(os.environ.get("DEMO_WORK_DIR") or os.path.join(base, "out", name))
+out = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else os.path.join(here, f"{name}.mp4")
 tl = json.load(open(os.path.join(here, "timeline.json")))
 frames, scenes, t0, t_end = tl["frames"], tl["scenes"], tl["frames"][0]["t"], tl["tEnd"]
 
