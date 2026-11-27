@@ -9,6 +9,12 @@ Verktøyet er ikke en del av app-bygget.
 |---|---|---|
 | [`intro.mjs`](scenarios/intro.mjs) | Søk og Telling → Trender → Konkordans (anker `^`) → Kollokasjoner → Definer korpus (Hamsun) → Vonnegut-bue → Om / Syntaks | ca. 2 min |
 | [`skrivemaater-or.mjs`](scenarios/skrivemaater-or.mjs) | `frihed`/`frihet` som inngang til OR-grupper: Telling, skiftet rundt 1915 i Trender, summen som egen kurve, OR i Konkordans og Kollokasjoner, `^(skib OR skip) storm` | ca. 1 ¼ min |
+| [`skrivemaater-or-en.mjs`](scenarios/skrivemaater-or-en.mjs) | Samme på engelsk: appen står i EN-modus, med engelsk stemme | ca. 1 ⅓ min |
+
+Øverst i en scenario-fil kan `lang: 'en'` slå appen over til engelsk (standard er `'no'`), og `voice`
+velge stemme fra `say -v '?'` (standard Nora for norsk og Samantha for engelsk). Premium-stemmer, som
+lastes ned under Systeminnstillinger → Tilgjengelighet → Opplest innhold → Administrer stemmer, låter
+tydelig mer naturlig.
 
 Hver scene har `say` (talen), eventuelt `cap` (tekstlinjen, hvis den skal avvike fra talen) og `do`
 (hva som skjer i appen). `do` bruker hjelpefunksjoner fra `record.mjs`: `d.search`, `d.goTab`,

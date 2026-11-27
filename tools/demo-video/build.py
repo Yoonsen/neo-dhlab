@@ -53,7 +53,7 @@ fc = "[0:v]fps=30,scale=1920:1080:flags=lanczos,format=yuv420p,tpad=stop_mode=cl
 cmd += ["-filter_complex", fc,
         "-map", "[vout]", "-map", "[aout]", "-map", f"{len(scenes) + 1}:s",
         "-c:v", "libx264", "-preset", "slow", "-crf", "20",
-        "-c:a", "aac", "-b:a", "160k", "-c:s", "mov_text", "-metadata:s:s:0", "language=nor",
+        "-c:a", "aac", "-b:a", "160k", "-c:s", "mov_text", "-metadata:s:s:0", "language=" + ("eng" if tl.get("lang") == "en" else "nor"),
         "-t", f"{t_end - t0:.2f}", "-movflags", "+faststart", out]
 subprocess.run(cmd, check=True)
 print(out)

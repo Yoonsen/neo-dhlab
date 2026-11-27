@@ -10,6 +10,22 @@ const HERE = path.dirname(new URL(import.meta.url).pathname);
 const SCENARIO = path.resolve(process.argv[2] || path.join(HERE, 'scenarios', 'intro.mjs'));
 const S = (await import(SCENARIO)).default;
 const NAME = path.basename(SCENARIO, '.mjs');
+const LANG = S.lang === 'en' ? 'en' : 'no';
+const VOICE = S.voice || (LANG === 'en' ? 'Samantha' : 'Nora');
+const RATE = String(S.rate || (LANG === 'en' ? 175 : 178));
+// UI texts the recorder looks for (mirror src/i18n.ts)
+const L = {
+  no: {
+    defineCorpus: /Definer korpus…|Nytt \/ endre korpus…/, applyCorpus: 'Bruk korpus', help: 'Om / Syntaks',
+    corpusName: /Navn på korpus/, fromYear: 'Fra år', toYear: 'Til år', lang: 'Språk', form: 'Litterær form',
+    author: /Forfatter/, arcFilter: 'Filtrer tittel/forfatter eller dhlabid…', locale: 'nb-NO',
+  },
+  en: {
+    defineCorpus: /Define corpus…|New \/ edit corpus…/, applyCorpus: 'Apply corpus', help: 'About / Syntax',
+    corpusName: /Corpus name/, fromYear: 'From year', toYear: 'To year', lang: 'Language', form: 'Literary form',
+    author: /Author/, arcFilter: 'Filter title/author or dhlabid…', locale: 'en-GB',
+  },
+}[LANG];
 const OUT = path.resolve(process.env.DEMO_WORK_DIR || path.join(HERE, 'out', NAME));
 const FRAMES = path.join(OUT, 'frames');
 const AUDIO = path.join(OUT, 'audio');
@@ -24,14 +40,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------- narration (macOS say, Norwegian voice) ----------
 let ttsIdx = 0;
 function tts(text) {
-  const spoken = text
-    .replace(/DHLAB/g, 'D H lab')
-    .replace(/1473/g, 'fjorten-syttitre')
-    .replace(/Om \/ Syntaks/g, 'Om, Syntaks')
-    .replace(/\bOR\b/g, 'O R')
-    .replace(/\^/g, '');
+  let spoken = text.replace(/\^/g, '');
+  if (LANG === 'no') {
+    spoken = spoken
+      .replace(/DHLAB/g, 'D H lab')
+      .replace(/1473/g, 'fjorten-syttitre')
+      .replace(/Om \/ Syntaks/g, 'Om, Syntaks')
+      .replace(/\bOR\b/g, 'O R');
+  } else {
+    spoken = spoken.replace(/DHLAB/g, 'D H Lab').replace(/About \/ Syntax/g, 'About, Syntax');
+  }
   const file = path.join(AUDIO, `s${String(++ttsIdx).padStart(2, '0')}.aiff`);
-  execFileSync('say', ['-v', 'Nora', '-r', '178', '-o', file, spoken]);
+  execFileSync('say', ['-v', VOICE, '-r', RATE, '-o', file, spoken]);
   const dur = parseFloat(
     execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString(),
   );
@@ -43,8 +63,9 @@ const browser = await chromium.launch();
 const context = await browser.newContext({
   viewport: { width: 1600, height: 900 },
   deviceScaleFactor: 1.2,
-  locale: 'nb-NO',
+  locale: L.locale,
 });
+await context.addInitScript((lang) => { try { localStorage.setItem('neo_dhlab_ui_lang_v1', lang); } catch {} }, LANG);
 const page = await context.newPage();
 await page.goto(APP_URL);
 await page.waitForSelector('.omnibox-input');
@@ -139,7 +160,7 @@ async function typeInto(locator, text) {
 async function waitIdle(extra = 900) {
   await sleep(400);
   await page
-    .waitForFunction(() => !document.querySelector('.loading-card, .spinner') && !/Beregner|Teller i arena/.test(document.body.innerText), null, { timeout: 30000 })
+    .waitForFunction(() => !document.querySelector('.loading-card, .spinner') && !/Beregner|Computing|Teller i arena|Counting in the arena/.test(document.body.innerText), null, { timeout: 30000 })
     .catch(() => console.warn('waitIdle timeout'));
   await sleep(extra);
 }
@@ -202,16 +223,16 @@ const d = {
   },
   /** Opens «Definer korpus…» and fills the given fields (empty ones are skipped). Does not submit. */
   async defineCorpus({ name, author, authorPick, fromYear, toYear, lang, form } = {}) {
-    await click(page.getByRole('button', { name: /Definer korpus|Nytt \/ endre korpus/ }));
+    await click(page.getByRole('button', { name: L.defineCorpus }));
     await raise();
     await sleep(400);
-    if (name) await typeInto(dlg().getByLabel(/Navn på korpus/), name);
-    if (fromYear) await typeInto(dlg().getByLabel('Fra år', { exact: true }), String(fromYear));
-    if (toYear) await typeInto(dlg().getByLabel('Til år', { exact: true }), String(toYear));
-    if (lang) await d.select(dlg().getByLabel('Språk', { exact: true }), lang);
-    if (form) await d.select(dlg().getByLabel('Litterær form', { exact: true }), form);
+    if (name) await typeInto(dlg().getByLabel(L.corpusName), name);
+    if (fromYear) await typeInto(dlg().getByLabel(L.fromYear, { exact: true }), String(fromYear));
+    if (toYear) await typeInto(dlg().getByLabel(L.toYear, { exact: true }), String(toYear));
+    if (lang) await d.select(dlg().getByLabel(L.lang, { exact: true }), lang);
+    if (form) await d.select(dlg().getByLabel(L.form, { exact: true }), form);
     if (author) {
-      await typeInto(dlg().getByLabel(/Forfatter/), author);
+      await typeInto(dlg().getByLabel(L.author), author);
       await sleep(1500);
       if (authorPick) {
         const sugg = page.locator('.facet-suggest-item', { hasText: authorPick }).first();
@@ -221,12 +242,12 @@ const d = {
     }
   },
   async applyCorpus() {
-    await click(page.getByRole('button', { name: 'Bruk korpus' }));
+    await click(page.getByRole('button', { name: L.applyCorpus }));
     await waitIdle(800);
   },
   /** Vonnegut tab: picks the first corpus book matching `filter` and deselects all others. */
   async pickArcBook(filter) {
-    await typeInto(page.getByPlaceholder('Filtrer tittel/forfatter eller dhlabid…'), filter);
+    await typeInto(page.getByPlaceholder(L.arcFilter), filter);
     await sleep(800);
     const chip = page.locator('.candidate-book-chip').first();
     if (!(await chip.count())) throw new Error(`pickArcBook: no book in the corpus matches "${filter}"`);
@@ -240,7 +261,7 @@ const d = {
     await waitIdle(800);
   },
   async openHelp() {
-    await click(page.locator('button', { hasText: 'Om / Syntaks' }).first());
+    await click(page.locator('button', { hasText: L.help }).first());
     await raise();
     await sleep(1500);
   },
@@ -268,7 +289,7 @@ await cdp.send('Page.stopScreencast');
 await sleep(300);
 fs.writeFileSync(
   path.join(OUT, 'timeline.json'),
-  JSON.stringify({ t0: frames[0]?.t ?? t0Holder.t, tEnd, frames, scenes: timeline }, null, 1),
+  JSON.stringify({ lang: LANG, t0: frames[0]?.t ?? t0Holder.t, tEnd, frames, scenes: timeline }, null, 1),
 );
 console.log(`frames: ${frames.length}, duration: ${(tEnd - (frames[0]?.t ?? 0)).toFixed(1)}s`);
 console.log('\nscene          narration  actions');
